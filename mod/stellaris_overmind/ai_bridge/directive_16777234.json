@@ -1,0 +1,8 @@
+{
+  "action": "COLONIZE",
+  "country_id": 16777234,
+  "parameters": {},
+  "reason": "Given the empire's mineral focus and the early game phase, colonizing a new system to secure valuable resources is a strategic priority. The empire has no colonies and the known systems are not occupied, making this a safe and beneficial action. This aligns with the \"minerals_first\" focus and the empire's economic style, which is alloy-focused. Colonizing early also helps in building a strong foundation for future expansion and resource management.",
+  "target": null,
+  "timestamp": "2201.1"
+}

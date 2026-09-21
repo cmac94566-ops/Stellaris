@@ -1,0 +1,8 @@
+{
+  "action": "COLONIZE",
+  "country_id": 16777221,
+  "parameters": {},
+  "reason": "The empire has three colonies, all designated as empty planets with no pops or districts. The ruleset emphasizes specialization and avoiding overextension, which is more easily managed with fewer colonies. Colonizing STAR_NAME_2_OF_3 aligns with the minerals_first focus and helps in expanding the empire's reach early in the game.",
+  "target": "STAR_NAME_2_OF_3",
+  "timestamp": "2201.1"
+}

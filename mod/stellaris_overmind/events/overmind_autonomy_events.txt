@@ -1,0 +1,226 @@
+# ============================================================
+# Stellaris Overmind — Autonomy Events
+#
+# 与 overmind.101-111（AI 帝国族）和 overmind.201-211（玩家指令族）不同，
+# 这一族不接收外部指令——它就是"自治"本身：每月自检、按法案行动。
+# （上面那两族靠控制台注入指令的事件已在 M1 退役，归档于
+#   _legacy/m0_directive_channel/；本族现在是 mod 唯一的 event 族。）
+#
+#   300  月度自治心跳（核心）
+#   301  开局启动自治
+#   302  自愈式启动：载入存档后自动接管（月度脉冲，已接管则为空操作）
+#   303  验收加速（仅 M1-9 实机验证用）
+#   304  归因守卫：原版 AI 接管告警（月度脉冲，不带 is_ai 门 —— 见下）
+#   310  年度外交
+#   320  法案开关：开启（由 edict 调用）
+#   321  法案开关：关闭（由 edict 调用）
+#
+# 之所以把执行逻辑放在 scripted_effects 里、事件只做转发，
+# 是因为 events 文件在被 mod 覆盖时容易和其他 mod 冲突，
+# 而 scripted_effects 是纯粹的命名空间，冲突面小得多。
+# ============================================================
+
+namespace = overmind
+
+
+# --- 301: 开局启动自治（玩家帝国专用） ---
+country_event = {
+	id = overmind.301
+	hide_window = yes
+	is_triggered_only = yes
+
+	trigger = { is_ai = no }
+
+	immediate = {
+		overmind_autonomy_engage = yes
+	}
+}
+
+
+# --- 302: 自愈式启动（读档后自动接管） ---
+#
+# 为什么需要它：on_game_start_country 只在"开局"触发，**读档不会**。
+# 所以任何在自治层存在之前建立的存档，载入后都不会自动接管。
+# 本事件挂在月度脉冲上，只要没接管、也没被玩家显式暂停，就启动。
+# 一次 set_country_flag = overmind_autonomy 之后就永久成为空操作。
+country_event = {
+	id = overmind.302
+	hide_window = yes
+	is_triggered_only = yes
+
+	trigger = {
+		is_ai = no
+		NOT = { has_country_flag = overmind_autonomy }
+		NOT = { has_country_flag = overmind_autonomy_paused }
+	}
+
+	immediate = {
+		overmind_autonomy_engage = yes
+	}
+}
+
+
+# --- 300: 月度自治心跳 ---
+country_event = {
+	id = overmind.300
+	hide_window = yes
+	is_triggered_only = yes
+
+	trigger = {
+		is_ai = no
+		overmind_autonomy_engaged = yes
+	}
+
+	immediate = {
+		overmind_autonomy_tick = yes
+	}
+}
+
+
+# --- 303: 验收加速（仅 M1-9 实机验证用） ---
+#
+# 目的：AC-4 要求「十年无人干预下四类指标单调增长」。真实挂机十年在验证环境里
+# 做不到——游戏是长驻 GUI 进程，活不过工具侧的后台任务时限。所以改为把自治心跳
+# 连续调用 N 次，等价于时间快进，但只需一次短启动。
+#
+# ⚠️ 两条教训都写在这里，因为最终形态就长在这个事件里：
+#
+# 教训一：绝不能用 while/for 包住 tick。
+#   ``while`` 是**静态展开**的——引擎解析期按迭代次数把循环体铺开。24 轮 tick
+#   各自把整棵相位树展开一遍，静态嵌套瞬间爆炸，伴生
+#     CRITICAL: Max effects post init recursive depth of 5 reached
+#     and there are at least 3552 effects left
+#   引擎放弃该分支初始化后，``add_tradition`` 在未初始化状态下被预检，于是
+#   **全部 54 个传统 key 都报 "could not find"**——连 tr_discovery_adopt 这种
+#   铁定存在的也报，极易误判成 ID 表错误。正确做法是**事件自递归**：
+#   事件之间的跳转是运行时调度，不计入 effect 的静态嵌套预算。
+#
+# 教训二：加速器绝不能成为 tick 前面的一层。
+#   tick 本身已占满 5 层预算：
+#     event(1) -> tick(2) -> run_slot(3) -> phase(4) -> 相位体内的调用(5)
+#   所以不能写成 ``overmind_verify_boost = { ... tick = yes ... }``——那会在
+#   tick 前面硬加一层，链变 6 层，症状同样是静默放弃。计数器必须和 tick
+#   **同级**，直接长在本事件的 immediate 里。
+#
+# 安全性：
+#   * 只在玩家自己的帝国上生效（is_ai = no），符合需求 G-1。
+#   * 需要显式开关：存档里 om_verify_boost >= 1 才跑，且自清零。
+#     正式游戏里这个变量永远不存在，所以本事件是空操作。
+#   * 不碰控制台（需求 G-2）。
+#   * 每轮把 om_month 归零，让 8 个日程格位轮流走一遍，而不是卡在同一格。
+country_event = {
+	id = overmind.303
+	hide_window = yes
+	is_triggered_only = yes
+
+	trigger = {
+		is_ai = no
+		check_variable = { which = om_verify_boost value >= 1 }
+	}
+
+	immediate = {
+		# 让月度计数从 1 重新开始，保证 8 个格位都能轮到。
+		set_variable = { which = om_month value = 0 }
+		# 与计数同级，不额外占一层。
+		overmind_autonomy_tick = yes
+		change_variable = { which = om_verify_boost value = -1 }
+		if = {
+			limit = { check_variable = { which = om_verify_boost value >= 1 } }
+			# 自递归。days = 1 让下一轮在约一天后到来，避免同帧堆叠。
+			country_event = { id = overmind.303 days = 1 }
+		}
+		else = {
+			log = "OVERMIND-VERIFY: boost finished"
+		}
+	}
+}
+
+
+# --- 304: 归因守卫（D-17 / F1，2026-09-15） ---
+#
+# 背景：用户执行了控制台 `human_ai on`，把帝国交给**原版 AI**。
+# 而接管状态在存档里**完全不可观测**（字节级搜索 human_ai / ai_managed /
+# auto_manage 全 0），只能靠事后考古 —— 这正是 D-17 拖到现在才暴露的根因。
+#
+# 为什么不能把守卫放进 tick：本族**所有**事件（300/301/302/303/310/320/321）
+# 都带 `is_ai = no` 门。human_ai 一旦生效，玩家国家被判定为 AI：
+#   * 300 不再触发 → 自治心跳**静默全停**；
+#   * 320/321 也调不到 → 连开关都失去作用。
+# 所以守卫必须是一条**不带 is_ai 门**的独立事件，才能在被门挡住时说话。
+#
+# 语义：
+#   * 自治层在线（engaged）但 is_ai = yes → 有人抢了方向盘，日志点名。
+#     本月所有指标自动失去归因资格，不再需要读存档。
+#   * 自治层没在线时本事件是空操作 —— 此时本就没有任何主脑动作，
+#     不存在"归因"问题，也不必制造日志噪音。
+#
+# 残余盲区（如实记录）：若开局前就开着 human_ai，自治层从未 engage，
+# 本事件不会告警。此时 mod 全程零动作，日志里没有任何 OVERMIND 行，
+# 本身就是"没接管"的证据，可人工识别。
+country_event = {
+	id = overmind.304
+	hide_window = yes
+	is_triggered_only = yes
+
+	trigger = {
+		overmind_autonomy_engaged = yes
+	}
+
+	immediate = {
+		if = {
+			limit = { is_ai = yes }
+			log = "OVERMIND: 【告警】 本国已被原版 AI（human_ai）接管 —— 自治心跳停摆，本月指标不可归因"
+		}
+		# R-1（三席评审红队#1）：归因干净必须**可证**，不能靠"没看见告警"反推。
+		# 缺失性判定有两个致命盲区：① 日志窗口没开 / 日志被轮转，告警丢了
+		# 也无从知道；② 开局前 human_ai 就开着 → 自治层从未 engage → 本事件
+		# 整局静默。改成存在性判定后：每条 【归因OK】 都是当月"没被接管"的
+		# 正面证据；若自治层在线却整月一条 【归因OK】 都没有，本身就是异常信号。
+		else = {
+			log = "OVERMIND: 【归因OK】 本月未被原版 AI 接管 —— 指标可归因于自治层，心跳正常"
+		}
+	}
+}
+
+
+# --- 310: 年度外交 ---
+country_event = {
+	id = overmind.310
+	hide_window = yes
+	is_triggered_only = yes
+
+	trigger = {
+		is_ai = no
+		overmind_autonomy_engaged = yes
+	}
+
+	immediate = {
+		overmind_autonomy_annual = yes
+	}
+}
+
+
+# --- 320 / 321: 由 edict 调用的开关 ---
+country_event = {
+	id = overmind.320
+	hide_window = yes
+	is_triggered_only = yes
+
+	trigger = { is_ai = no }
+
+	immediate = {
+		overmind_autonomy_engage = yes
+	}
+}
+
+country_event = {
+	id = overmind.321
+	hide_window = yes
+	is_triggered_only = yes
+
+	trigger = { is_ai = no }
+
+	immediate = {
+		overmind_autonomy_disengage = yes
+	}
+}

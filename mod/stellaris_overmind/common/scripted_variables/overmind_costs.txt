@@ -1,0 +1,53 @@
+# ============================================================
+# Stellaris Overmind — Cost Variables（生成文件，**纯文档**）
+#
+# 本文件由 engine/costs.py 生成，不含任何生效语句 —— 全部是注释。
+# 执行层扣费使用的是 common/scripted_effects/overmind_charges.txt
+# 里的字面数字；机器可读的造价表是 overmind_cost_table.json。
+#
+# 为什么故意不定义 @ 变量：scripted_variables 会被引擎**全量注册**，
+# 于是本 mod 自造的名字会和游戏及其它 mod 抢同一个注册表。
+# 实机曾因此报：
+#   Variable name max_tradition_trees is already taken.
+#   file: common/scripted_variables/07_scripted_variables_machine_age.txt line: 20
+# 文档文件不该有这种副作用，所以这里一个活跃定义都不留。
+#
+# 传统树上限的真身是游戏定义的 @max_tradition_trees（见下行说明），
+# 执行层直接引用它，本文件只做备忘。
+# ============================================================
+
+# --- 传统树上限：游戏定义 @max_tradition_trees = 7 ---
+#     （来源 common/scripted_variables/07_scripted_variables_machine_age.txt；执行层引用该游戏变量，不引用本文件）
+
+# --- district ---
+# district_generator: minerals -300
+# district_mining: minerals -300
+# district_farming: minerals -300
+# district_city: minerals -500
+
+# --- zone ---
+# zone_industrial: minerals -1000
+# zone_foundry: minerals -1000
+# zone_factory: minerals -1000
+# zone_research: minerals -1000
+# zone_trade: minerals -1000
+# zone_unity: minerals -1000
+# zone_energy: minerals -1000
+# zone_minerals: minerals -1000
+# zone_food: minerals -1000
+# zone_rare_crystals: minerals -1000
+# zone_volatile_motes: minerals -1000
+# zone_exotic_gases: minerals -1000
+
+# --- building ---
+# building_holo_theatres: minerals -400
+# building_luxury_residence: minerals -400
+# building_research_lab_1: minerals -400
+# building_factory_1: minerals -400
+# building_foundry_1: minerals -400
+
+# --- army ---
+# assault_army: minerals -100
+
+# --- starbase ---
+# starbase_outpost: alloys -100

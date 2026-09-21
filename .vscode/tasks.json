@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "双路监视：主脑 + 智能体",
+      "detail": "实时看 AI 在游戏里做什么 + WorkBuddy/zcode 的操作留痕",
+      "type": "shell",
+      "command": "C:\\Users\\<user>\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+      "args": ["-u", "tools/unified_watch.py"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "双路监视（含邮箱）",
+      "detail": "同上，额外显示与 zcode 的收发通讯",
+      "type": "shell",
+      "command": "C:\\Users\\<user>\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+      "args": ["-u", "tools/unified_watch.py", "--mail"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,641 @@
+# ============================================================
+# Stellaris Overmind — Progression（传统与飞升，生成文件）
+#
+# 本文件由 engine/costs.py 从游戏自带数据生成，请勿手改。
+# 链上的每个 ID 都取自 common/traditions 与 common/ascension_perks，
+# 因此游戏改名 / 加节点会自动同步，而不是静默失效。
+#
+# 大模型只说整数编码（om_lex_tradition_mode / om_lex_ap_mode），
+# 具体走哪条链由本文件决定——这就是「封闭取值域」的落地方式。
+# ============================================================
+
+# 采纳下一棵传统树（按模式链，取第一棵尚未采纳的）
+# 注意：各模式的分支是**内联**在这里的，不是各自一个 effect。
+# 原因：引擎对 scripted effect 的嵌套上限是 5 层，拆开会超限。
+overmind_advance_tradition_tree = {
+	if = {
+		limit = { check_variable = { which = om_lex_tradition_mode value = 1 } }
+		if = {
+			limit = { NOT = { has_tradition = tr_discovery_adopt } }
+			add_tradition = tr_discovery_adopt
+			log = "OVERMIND: 采纳传统树 discovery（tr_discovery_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_prosperity_adopt } }
+			add_tradition = tr_prosperity_adopt
+			log = "OVERMIND: 采纳传统树 prosperity（tr_prosperity_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_supremacy_adopt } }
+			add_tradition = tr_supremacy_adopt
+			log = "OVERMIND: 采纳传统树 supremacy（tr_supremacy_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_expansion_adopt } }
+			add_tradition = tr_expansion_adopt
+			log = "OVERMIND: 采纳传统树 expansion（tr_expansion_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_mercantile_adopt } }
+			add_tradition = tr_mercantile_adopt
+			log = "OVERMIND: 采纳传统树 mercantile（tr_mercantile_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_harmony_adopt } }
+			add_tradition = tr_harmony_adopt
+			log = "OVERMIND: 采纳传统树 harmony（tr_harmony_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_adaptability_adopt } }
+			add_tradition = tr_adaptability_adopt
+			log = "OVERMIND: 采纳传统树 adaptability（tr_adaptability_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_diplomacy_adopt } }
+			add_tradition = tr_diplomacy_adopt
+			log = "OVERMIND: 采纳传统树 diplomacy（tr_diplomacy_adopt）"
+		}
+	}
+	else_if = {
+		limit = { check_variable = { which = om_lex_tradition_mode value = 2 } }
+		if = {
+			limit = { NOT = { has_tradition = tr_expansion_adopt } }
+			add_tradition = tr_expansion_adopt
+			log = "OVERMIND: 采纳传统树 expansion（tr_expansion_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_prosperity_adopt } }
+			add_tradition = tr_prosperity_adopt
+			log = "OVERMIND: 采纳传统树 prosperity（tr_prosperity_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_adaptability_adopt } }
+			add_tradition = tr_adaptability_adopt
+			log = "OVERMIND: 采纳传统树 adaptability（tr_adaptability_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_discovery_adopt } }
+			add_tradition = tr_discovery_adopt
+			log = "OVERMIND: 采纳传统树 discovery（tr_discovery_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_mercantile_adopt } }
+			add_tradition = tr_mercantile_adopt
+			log = "OVERMIND: 采纳传统树 mercantile（tr_mercantile_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_supremacy_adopt } }
+			add_tradition = tr_supremacy_adopt
+			log = "OVERMIND: 采纳传统树 supremacy（tr_supremacy_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_harmony_adopt } }
+			add_tradition = tr_harmony_adopt
+			log = "OVERMIND: 采纳传统树 harmony（tr_harmony_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_diplomacy_adopt } }
+			add_tradition = tr_diplomacy_adopt
+			log = "OVERMIND: 采纳传统树 diplomacy（tr_diplomacy_adopt）"
+		}
+	}
+	else_if = {
+		limit = { check_variable = { which = om_lex_tradition_mode value = 3 } }
+		if = {
+			limit = { NOT = { has_tradition = tr_supremacy_adopt } }
+			add_tradition = tr_supremacy_adopt
+			log = "OVERMIND: 采纳传统树 supremacy（tr_supremacy_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_prosperity_adopt } }
+			add_tradition = tr_prosperity_adopt
+			log = "OVERMIND: 采纳传统树 prosperity（tr_prosperity_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_domination_adopt } }
+			add_tradition = tr_domination_adopt
+			log = "OVERMIND: 采纳传统树 domination（tr_domination_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_discovery_adopt } }
+			add_tradition = tr_discovery_adopt
+			log = "OVERMIND: 采纳传统树 discovery（tr_discovery_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_mercantile_adopt } }
+			add_tradition = tr_mercantile_adopt
+			log = "OVERMIND: 采纳传统树 mercantile（tr_mercantile_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_harmony_adopt } }
+			add_tradition = tr_harmony_adopt
+			log = "OVERMIND: 采纳传统树 harmony（tr_harmony_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_adaptability_adopt } }
+			add_tradition = tr_adaptability_adopt
+			log = "OVERMIND: 采纳传统树 adaptability（tr_adaptability_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_diplomacy_adopt } }
+			add_tradition = tr_diplomacy_adopt
+			log = "OVERMIND: 采纳传统树 diplomacy（tr_diplomacy_adopt）"
+		}
+	}
+	else_if = {
+		limit = { check_variable = { which = om_lex_tradition_mode value = 4 } }
+		if = {
+			limit = { NOT = { has_tradition = tr_diplomacy_adopt } }
+			add_tradition = tr_diplomacy_adopt
+			log = "OVERMIND: 采纳传统树 diplomacy（tr_diplomacy_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_mercantile_adopt } }
+			add_tradition = tr_mercantile_adopt
+			log = "OVERMIND: 采纳传统树 mercantile（tr_mercantile_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_prosperity_adopt } }
+			add_tradition = tr_prosperity_adopt
+			log = "OVERMIND: 采纳传统树 prosperity（tr_prosperity_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_discovery_adopt } }
+			add_tradition = tr_discovery_adopt
+			log = "OVERMIND: 采纳传统树 discovery（tr_discovery_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_harmony_adopt } }
+			add_tradition = tr_harmony_adopt
+			log = "OVERMIND: 采纳传统树 harmony（tr_harmony_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_adaptability_adopt } }
+			add_tradition = tr_adaptability_adopt
+			log = "OVERMIND: 采纳传统树 adaptability（tr_adaptability_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_expansion_adopt } }
+			add_tradition = tr_expansion_adopt
+			log = "OVERMIND: 采纳传统树 expansion（tr_expansion_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_supremacy_adopt } }
+			add_tradition = tr_supremacy_adopt
+			log = "OVERMIND: 采纳传统树 supremacy（tr_supremacy_adopt）"
+		}
+	}
+	else = {
+		if = {
+			limit = { NOT = { has_tradition = tr_discovery_adopt } }
+			add_tradition = tr_discovery_adopt
+			log = "OVERMIND: 采纳传统树 discovery（tr_discovery_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_prosperity_adopt } }
+			add_tradition = tr_prosperity_adopt
+			log = "OVERMIND: 采纳传统树 prosperity（tr_prosperity_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_supremacy_adopt } }
+			add_tradition = tr_supremacy_adopt
+			log = "OVERMIND: 采纳传统树 supremacy（tr_supremacy_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_expansion_adopt } }
+			add_tradition = tr_expansion_adopt
+			log = "OVERMIND: 采纳传统树 expansion（tr_expansion_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_mercantile_adopt } }
+			add_tradition = tr_mercantile_adopt
+			log = "OVERMIND: 采纳传统树 mercantile（tr_mercantile_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_harmony_adopt } }
+			add_tradition = tr_harmony_adopt
+			log = "OVERMIND: 采纳传统树 harmony（tr_harmony_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_adaptability_adopt } }
+			add_tradition = tr_adaptability_adopt
+			log = "OVERMIND: 采纳传统树 adaptability（tr_adaptability_adopt）"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_diplomacy_adopt } }
+			add_tradition = tr_diplomacy_adopt
+			log = "OVERMIND: 采纳传统树 diplomacy（tr_diplomacy_adopt）"
+		}
+	}
+}
+
+# 模式 1 = tech（已内联到 overmind_advance_tradition_tree）
+# 链: discovery -> prosperity -> supremacy -> expansion -> mercantile -> harmony -> adaptability -> diplomacy
+
+# 模式 2 = wide（已内联到 overmind_advance_tradition_tree）
+# 链: expansion -> prosperity -> adaptability -> discovery -> mercantile -> supremacy -> harmony -> diplomacy
+
+# 模式 3 = war（已内联到 overmind_advance_tradition_tree）
+# 链: supremacy -> prosperity -> domination -> discovery -> mercantile -> harmony -> adaptability -> diplomacy
+
+# 模式 4 = diplo（已内联到 overmind_advance_tradition_tree）
+# 链: diplomacy -> mercantile -> prosperity -> discovery -> harmony -> adaptability -> expansion -> supremacy
+
+# 在已采纳的树里推进一个节点（取第一个尚未拥有的）
+# 同样内联各树分支，避免多出一层嵌套（见 advance_tradition_tree 的说明）。
+overmind_advance_tradition_node = {
+	if = {
+		limit = { has_tradition = tr_discovery_adopt }
+		if = {
+			limit = { NOT = { has_tradition = tr_discovery_to_boldly_go } }
+			add_tradition = tr_discovery_to_boldly_go
+			log = "OVERMIND: 传统推进节点 tr_discovery_to_boldly_go"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_discovery_databank_uplinks } }
+			add_tradition = tr_discovery_databank_uplinks
+			log = "OVERMIND: 传统推进节点 tr_discovery_databank_uplinks"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_discovery_science_division } }
+			add_tradition = tr_discovery_science_division
+			log = "OVERMIND: 传统推进节点 tr_discovery_science_division"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_discovery_polytechnic_education } }
+			add_tradition = tr_discovery_polytechnic_education
+			log = "OVERMIND: 传统推进节点 tr_discovery_polytechnic_education"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_discovery_faith_in_science } }
+			add_tradition = tr_discovery_faith_in_science
+			log = "OVERMIND: 传统推进节点 tr_discovery_faith_in_science"
+		}
+	}
+	else_if = {
+		limit = { has_tradition = tr_prosperity_adopt }
+		if = {
+			limit = { NOT = { has_tradition = tr_prosperity_sct } }
+			add_tradition = tr_prosperity_sct
+			log = "OVERMIND: 传统推进节点 tr_prosperity_sct"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_prosperity_administrative_operations } }
+			add_tradition = tr_prosperity_administrative_operations
+			log = "OVERMIND: 传统推进节点 tr_prosperity_administrative_operations"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_prosperity_public_works } }
+			add_tradition = tr_prosperity_public_works
+			log = "OVERMIND: 传统推进节点 tr_prosperity_public_works"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_prosperity_interstellar_franchising } }
+			add_tradition = tr_prosperity_interstellar_franchising
+			log = "OVERMIND: 传统推进节点 tr_prosperity_interstellar_franchising"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_prosperity_pursuit_of_profit } }
+			add_tradition = tr_prosperity_pursuit_of_profit
+			log = "OVERMIND: 传统推进节点 tr_prosperity_pursuit_of_profit"
+		}
+	}
+	else_if = {
+		limit = { has_tradition = tr_supremacy_adopt }
+		if = {
+			limit = { NOT = { has_tradition = tr_supremacy_fleet_logistical_corps } }
+			add_tradition = tr_supremacy_fleet_logistical_corps
+			log = "OVERMIND: 传统推进节点 tr_supremacy_fleet_logistical_corps"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_supremacy_master_shipwrights } }
+			add_tradition = tr_supremacy_master_shipwrights
+			log = "OVERMIND: 传统推进节点 tr_supremacy_master_shipwrights"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_supremacy_war_games } }
+			add_tradition = tr_supremacy_war_games
+			log = "OVERMIND: 传统推进节点 tr_supremacy_war_games"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_supremacy_overwhelming_force } }
+			add_tradition = tr_supremacy_overwhelming_force
+			log = "OVERMIND: 传统推进节点 tr_supremacy_overwhelming_force"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_supremacy_great_game } }
+			add_tradition = tr_supremacy_great_game
+			log = "OVERMIND: 传统推进节点 tr_supremacy_great_game"
+		}
+	}
+	else_if = {
+		limit = { has_tradition = tr_expansion_adopt }
+		if = {
+			limit = { NOT = { has_tradition = tr_expansion_colonization_fever } }
+			add_tradition = tr_expansion_colonization_fever
+			log = "OVERMIND: 传统推进节点 tr_expansion_colonization_fever"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_expansion_a_new_life } }
+			add_tradition = tr_expansion_a_new_life
+			log = "OVERMIND: 传统推进节点 tr_expansion_a_new_life"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_expansion_courier_network } }
+			add_tradition = tr_expansion_courier_network
+			log = "OVERMIND: 传统推进节点 tr_expansion_courier_network"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_expansion_reach_for_the_stars } }
+			add_tradition = tr_expansion_reach_for_the_stars
+			log = "OVERMIND: 传统推进节点 tr_expansion_reach_for_the_stars"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_expansion_galactic_ambition } }
+			add_tradition = tr_expansion_galactic_ambition
+			log = "OVERMIND: 传统推进节点 tr_expansion_galactic_ambition"
+		}
+	}
+	else_if = {
+		limit = { has_tradition = tr_mercantile_adopt }
+		if = {
+			limit = { NOT = { has_tradition = tr_mercantile_trickle_up_economics } }
+			add_tradition = tr_mercantile_trickle_up_economics
+			log = "OVERMIND: 传统推进节点 tr_mercantile_trickle_up_economics"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_mercantile_commercial_enterprise } }
+			add_tradition = tr_mercantile_commercial_enterprise
+			log = "OVERMIND: 传统推进节点 tr_mercantile_commercial_enterprise"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_mercantile_adaptive_economic_policies } }
+			add_tradition = tr_mercantile_adaptive_economic_policies
+			log = "OVERMIND: 传统推进节点 tr_mercantile_adaptive_economic_policies"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_mercantile_marketplace_of_better_ideas } }
+			add_tradition = tr_mercantile_marketplace_of_better_ideas
+			log = "OVERMIND: 传统推进节点 tr_mercantile_marketplace_of_better_ideas"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_mercantile_insider_trading } }
+			add_tradition = tr_mercantile_insider_trading
+			log = "OVERMIND: 传统推进节点 tr_mercantile_insider_trading"
+		}
+	}
+	else_if = {
+		limit = { has_tradition = tr_harmony_adopt }
+		if = {
+			limit = { NOT = { has_tradition = tr_harmony_the_greater_good } }
+			add_tradition = tr_harmony_the_greater_good
+			log = "OVERMIND: 传统推进节点 tr_harmony_the_greater_good"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_harmony_kinship } }
+			add_tradition = tr_harmony_kinship
+			log = "OVERMIND: 传统推进节点 tr_harmony_kinship"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_harmony_utopian_dream } }
+			add_tradition = tr_harmony_utopian_dream
+			log = "OVERMIND: 传统推进节点 tr_harmony_utopian_dream"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_harmony_harmonious_directives } }
+			add_tradition = tr_harmony_harmonious_directives
+			log = "OVERMIND: 传统推进节点 tr_harmony_harmonious_directives"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_harmony_mind_and_body } }
+			add_tradition = tr_harmony_mind_and_body
+			log = "OVERMIND: 传统推进节点 tr_harmony_mind_and_body"
+		}
+	}
+	else_if = {
+		limit = { has_tradition = tr_adaptability_adopt }
+		if = {
+			limit = { NOT = { has_tradition = tr_adaptability_recycling } }
+			add_tradition = tr_adaptability_recycling
+			log = "OVERMIND: 传统推进节点 tr_adaptability_recycling"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_adaptability_survival_fittest } }
+			add_tradition = tr_adaptability_survival_fittest
+			log = "OVERMIND: 传统推进节点 tr_adaptability_survival_fittest"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_adaptability_environmental_diversification } }
+			add_tradition = tr_adaptability_environmental_diversification
+			log = "OVERMIND: 传统推进节点 tr_adaptability_environmental_diversification"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_adaptability_adaptive_ecology } }
+			add_tradition = tr_adaptability_adaptive_ecology
+			log = "OVERMIND: 传统推进节点 tr_adaptability_adaptive_ecology"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_adaptability_appropriation } }
+			add_tradition = tr_adaptability_appropriation
+			log = "OVERMIND: 传统推进节点 tr_adaptability_appropriation"
+		}
+	}
+	else_if = {
+		limit = { has_tradition = tr_diplomacy_adopt }
+		if = {
+			limit = { NOT = { has_tradition = tr_diplomacy_the_federation } }
+			add_tradition = tr_diplomacy_the_federation
+			log = "OVERMIND: 传统推进节点 tr_diplomacy_the_federation"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_diplomacy_entente_coordination } }
+			add_tradition = tr_diplomacy_entente_coordination
+			log = "OVERMIND: 传统推进节点 tr_diplomacy_entente_coordination"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_diplomacy_diplomatic_networking } }
+			add_tradition = tr_diplomacy_diplomatic_networking
+			log = "OVERMIND: 传统推进节点 tr_diplomacy_diplomatic_networking"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_diplomacy_direct_diplomacy } }
+			add_tradition = tr_diplomacy_direct_diplomacy
+			log = "OVERMIND: 传统推进节点 tr_diplomacy_direct_diplomacy"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_diplomacy_eminent_diplomats } }
+			add_tradition = tr_diplomacy_eminent_diplomats
+			log = "OVERMIND: 传统推进节点 tr_diplomacy_eminent_diplomats"
+		}
+	}
+	else_if = {
+		limit = { has_tradition = tr_domination_adopt }
+		if = {
+			limit = { NOT = { has_tradition = tr_domination_colonial_viceroys } }
+			add_tradition = tr_domination_colonial_viceroys
+			log = "OVERMIND: 传统推进节点 tr_domination_colonial_viceroys"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_domination_imperious_architecture } }
+			add_tradition = tr_domination_imperious_architecture
+			log = "OVERMIND: 传统推进节点 tr_domination_imperious_architecture"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_domination_grand_council } }
+			add_tradition = tr_domination_grand_council
+			log = "OVERMIND: 传统推进节点 tr_domination_grand_council"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_domination_judgment_corps } }
+			add_tradition = tr_domination_judgment_corps
+			log = "OVERMIND: 传统推进节点 tr_domination_judgment_corps"
+		}
+		else_if = {
+			limit = { NOT = { has_tradition = tr_domination_workplace_motivators } }
+			add_tradition = tr_domination_workplace_motivators
+			log = "OVERMIND: 传统推进节点 tr_domination_workplace_motivators"
+		}
+	}
+}
+
+# overmind_node_discovery（已内联）— 5 个节点
+
+# overmind_node_prosperity（已内联）— 5 个节点
+
+# overmind_node_supremacy（已内联）— 5 个节点
+
+# overmind_node_expansion（已内联）— 5 个节点
+
+# overmind_node_mercantile（已内联）— 5 个节点
+
+# overmind_node_harmony（已内联）— 5 个节点
+
+# overmind_node_adaptability（已内联）— 5 个节点
+
+# overmind_node_diplomacy（已内联）— 5 个节点
+
+# overmind_node_domination（已内联）— 5 个节点
+
+# 授予一个飞升天赋（按模式链，取第一个尚未拥有的）
+# 各模式分支同样内联，避免多出一层嵌套。
+overmind_grant_ascension_perk = {
+	if = {
+		limit = { check_variable = { which = om_lex_ap_mode value = 1 } }
+		if = {
+			limit = { NOT = { has_ascension_perk = ap_technological_ascendancy } }
+			add_ascension_perk = ap_technological_ascendancy
+			log = "OVERMIND: 授予飞升天赋 ap_technological_ascendancy"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_transcendent_learning } }
+			add_ascension_perk = ap_transcendent_learning
+			log = "OVERMIND: 授予飞升天赋 ap_transcendent_learning"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_one_vision } }
+			add_ascension_perk = ap_one_vision
+			log = "OVERMIND: 授予飞升天赋 ap_one_vision"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_galactic_wonders } }
+			add_ascension_perk = ap_galactic_wonders
+			log = "OVERMIND: 授予飞升天赋 ap_galactic_wonders"
+		}
+	}
+	else_if = {
+		limit = { check_variable = { which = om_lex_ap_mode value = 2 } }
+		if = {
+			limit = { NOT = { has_ascension_perk = ap_mastery_of_nature } }
+			add_ascension_perk = ap_mastery_of_nature
+			log = "OVERMIND: 授予飞升天赋 ap_mastery_of_nature"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_voidborn } }
+			add_ascension_perk = ap_voidborn
+			log = "OVERMIND: 授予飞升天赋 ap_voidborn"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_world_shaper } }
+			add_ascension_perk = ap_world_shaper
+			log = "OVERMIND: 授予飞升天赋 ap_world_shaper"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_arcology_project } }
+			add_ascension_perk = ap_arcology_project
+			log = "OVERMIND: 授予飞升天赋 ap_arcology_project"
+		}
+	}
+	else_if = {
+		limit = { check_variable = { which = om_lex_ap_mode value = 3 } }
+		if = {
+			limit = { NOT = { has_ascension_perk = ap_galactic_force_projection } }
+			add_ascension_perk = ap_galactic_force_projection
+			log = "OVERMIND: 授予飞升天赋 ap_galactic_force_projection"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_lord_of_war } }
+			add_ascension_perk = ap_lord_of_war
+			log = "OVERMIND: 授予飞升天赋 ap_lord_of_war"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_colossus } }
+			add_ascension_perk = ap_colossus
+			log = "OVERMIND: 授予飞升天赋 ap_colossus"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_master_builders } }
+			add_ascension_perk = ap_master_builders
+			log = "OVERMIND: 授予飞升天赋 ap_master_builders"
+		}
+	}
+	else_if = {
+		limit = { check_variable = { which = om_lex_ap_mode value = 4 } }
+		if = {
+			limit = { NOT = { has_ascension_perk = ap_universal_transactions } }
+			add_ascension_perk = ap_universal_transactions
+			log = "OVERMIND: 授予飞升天赋 ap_universal_transactions"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_executive_vigor } }
+			add_ascension_perk = ap_executive_vigor
+			log = "OVERMIND: 授予飞升天赋 ap_executive_vigor"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_imperial_prerogative } }
+			add_ascension_perk = ap_imperial_prerogative
+			log = "OVERMIND: 授予飞升天赋 ap_imperial_prerogative"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_galactic_contender } }
+			add_ascension_perk = ap_galactic_contender
+			log = "OVERMIND: 授予飞升天赋 ap_galactic_contender"
+		}
+	}
+	else = {
+		if = {
+			limit = { NOT = { has_ascension_perk = ap_technological_ascendancy } }
+			add_ascension_perk = ap_technological_ascendancy
+			log = "OVERMIND: 授予飞升天赋 ap_technological_ascendancy"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_transcendent_learning } }
+			add_ascension_perk = ap_transcendent_learning
+			log = "OVERMIND: 授予飞升天赋 ap_transcendent_learning"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_one_vision } }
+			add_ascension_perk = ap_one_vision
+			log = "OVERMIND: 授予飞升天赋 ap_one_vision"
+		}
+		else_if = {
+			limit = { NOT = { has_ascension_perk = ap_galactic_wonders } }
+			add_ascension_perk = ap_galactic_wonders
+			log = "OVERMIND: 授予飞升天赋 ap_galactic_wonders"
+		}
+	}
+}
+
+# 模式 1 = tech（已内联）— 4 个
+# 模式 2 = wide（已内联）— 4 个
+# 模式 3 = war（已内联）— 4 个
+# 模式 4 = trade（已内联）— 4 个

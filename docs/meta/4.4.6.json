@@ -1,0 +1,51 @@
+{
+  "version": "4.4.6",
+  "patch_name": "Pegasus",
+  "checksum": "fdde",
+  "sources": [
+    "https://stellaris.paradoxwikis.com/Patch_4.4",
+    "https://stellaris.paradoxwikis.com/Patch_4.4.X"
+  ],
+  "evidence_policy": "Official patch mechanics only. Community build rankings require a separate real-game validation pass before promotion.",
+  "weapon_verdicts": {},
+  "forbidden_weapons": [],
+  "forbidden_fleet_patterns": [],
+  "fleet_templates": {},
+  "economy_rules": {
+    "early": {
+      "focus": "planet_designation_and_unity",
+      "notes": "4.4 AI and colony systems favor designated, specialized worlds. Small empires expand more aggressively, while excessive undeveloped colonies are discouraged."
+    },
+    "mid": {
+      "focus": "ascension_path_and_specialization",
+      "notes": "4.4 raises AI ascension-path weighting and improves designation-matched building and zone planning."
+    },
+    "late": {
+      "focus": "research_scaling_and_designation_maintenance",
+      "notes": "4.4 shifts native AI endgame planning toward higher research targets and lower alloy ceilings."
+    }
+  },
+  "nomads": {
+    "requires_dlc": "Nomads",
+    "core_mechanics": [
+      "Arkships are mobile capitals, colonies, shipyards, and warships.",
+      "Waystations harvest systems without claiming them; adjacent stations form Waylines.",
+      "Contracts provide military, science, resource, and diplomacy objectives.",
+      "Nomadic empires may settle or settled empires may embark after the required tradition."
+    ],
+    "operational_rules": [
+      "Do not use ordinary expansion logic for Nomadic empires.",
+      "Treat BUILD_STARBASE as Waystation-network intent when native AI supports it.",
+      "Treat COLONIZE as settlement intent only when the save explicitly reports settlement availability.",
+      "Prioritize Operational Reserves before optional spending; the critical stage penalizes research, unity, alloys, and job efficiency."
+    ],
+    "origins": ["Voidfarers", "Heirs of the Khan", "The Sacred Path", "Forever Cruise"],
+    "civics": ["Caravan Masters", "Void Reavers", "Star Seekers", "Flight Schools", "Deep Sleep"]
+  },
+  "diplomacy_rules": [
+    "Non-primary war participants can negotiate to join or leave ongoing wars.",
+    "A fully occupied empire accumulates escalating war exhaustion and attrition."
+  ],
+  "meta_rules_domestic": "4.4.6 CONFIRMED: specialize colonies to their designation, value unity and ascension paths, and avoid overextending into too many undeveloped colonies. NOMADS: manage Operational Reserves, Arkships, Waystations, Waylines, and Contracts instead of normal territorial expansion.",
+  "meta_rules_military": "4.4.6 CONFIRMED: use native AI specialization and preserve fog-of-war. Evaluate joining or leaving ongoing wars from known occupation, exhaustion, and diplomatic information. Weapon and fleet rankings require separate 4.4 gameplay validation."
+}

@@ -1,0 +1,8 @@
+{
+  "action": "COLONIZE",
+  "country_id": 16777222,
+  "parameters": {},
+  "reason": "Given the empire's early game focus on minerals and the current state of colonies, colonizing a barren planet (SUBPLANET_NAME_FORMAT) aligns with the minerals_first strategy. This action will help increase mineral production and expand the empire's resource base, which is crucial for technological advancement and economic growth. Additionally, the empire's militarist ethics and aggressive diplomacy tendency make colonization a strategic priority to ensure resource dominance and expand territory.",
+  "target": "SUBPLANET_NAME_FORMAT",
+  "timestamp": "2201.1"
+}

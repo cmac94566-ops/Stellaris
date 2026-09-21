@@ -1,0 +1,7 @@
+﻿l_english:
+ opinion_overmind_goodwill:0 "Overmind Diplomatic Outreach"
+ opinion_overmind_goodwill_desc:0 "The Overmind has directed its diplomats to improve relations with us."
+overmind_autonomy_on:0 "Overmind: Engage Autonomy"
+overmind_autonomy_on_desc:0 "Hands day-to-day rule of your empire to the Overmind. Every month it inspects the realm and, following the Lex written by the large language model, builds districts, zones, amenity and research buildings, adjusts fleet posture and economic policy, and repairs foreign relations each year.\n\nNote: this mod modifies the common and events folders, which changes the checksum, so achievements are disabled for this campaign."
+overmind_autonomy_off:0 "Overmind: Disengage Autonomy"
+overmind_autonomy_off_desc:0 "Stops the Overmind from ruling your empire and returns control to you. Construction already made and policies already set are not reverted."

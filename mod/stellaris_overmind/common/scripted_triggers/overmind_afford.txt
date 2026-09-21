@@ -1,0 +1,177 @@
+# ============================================================
+# Stellaris Overmind — Charge & Affordability（生成文件）
+#
+# 本文件由 engine/costs.py 从游戏自带数据生成，请勿手改。
+#
+# 每个物件配一对：
+#   overmind_afford_<kind>_<id>  触发器：国库够不够付
+#   overmind_charge_<kind>_<id>  效果：按游戏造价扣一次钱
+# 执行层先问 afford、再调 charge，然后才建造，
+# 这样帝国永远不可能在建不起的时候凭空长出东西。
+#
+# ⚠️ 这一对**分居两个目录**，不要把它们合并回去：
+#   trigger 只有放在 common/scripted_triggers/ 才会被注册；
+#   放进 scripted_effects/ 的顶层 trigger 会被静默丢弃，
+#   运行时表现为 `Error in scripted trigger, cannot find: ...`。
+#
+# 写成字面数字而不是 @ 脚本变量：@ 在 $参数$ 展开之后的解析
+# 顺序无法静态验证，而扣费出错是静默的。
+# ============================================================
+
+# district_generator <- common\districts\02_rural_districts.txt
+overmind_afford_district_district_generator = {
+	resource_stockpile_compare = { resource = minerals value >= 300 }
+}
+
+# district_mining <- common\districts\02_rural_districts.txt
+overmind_afford_district_district_mining = {
+	resource_stockpile_compare = { resource = minerals value >= 300 }
+}
+
+# district_farming <- common\districts\02_rural_districts.txt
+overmind_afford_district_district_farming = {
+	resource_stockpile_compare = { resource = minerals value >= 300 }
+}
+
+# district_city <- common\districts\00_urban_districts.txt
+overmind_afford_district_district_city = {
+	resource_stockpile_compare = { resource = minerals value >= 500 }
+}
+
+# zone_industrial <- common\zones\00_zones.txt
+overmind_afford_zone_zone_industrial = {
+	resource_stockpile_compare = { resource = minerals value >= 1000 }
+}
+
+# zone_foundry <- common\zones\00_zones.txt
+overmind_afford_zone_zone_foundry = {
+	resource_stockpile_compare = { resource = minerals value >= 1000 }
+}
+
+# zone_factory <- common\zones\00_zones.txt
+overmind_afford_zone_zone_factory = {
+	resource_stockpile_compare = { resource = minerals value >= 1000 }
+}
+
+# zone_research <- common\zones\00_zones.txt
+overmind_afford_zone_zone_research = {
+	resource_stockpile_compare = { resource = minerals value >= 1000 }
+}
+
+# zone_trade <- common\zones\00_zones.txt
+overmind_afford_zone_zone_trade = {
+	resource_stockpile_compare = { resource = minerals value >= 1000 }
+}
+
+# zone_unity <- common\zones\00_zones.txt
+overmind_afford_zone_zone_unity = {
+	resource_stockpile_compare = { resource = minerals value >= 1000 }
+}
+
+# zone_energy <- common\zones\00_zones.txt
+overmind_afford_zone_zone_energy = {
+	resource_stockpile_compare = { resource = minerals value >= 1000 }
+}
+
+# zone_minerals <- common\zones\00_zones.txt
+overmind_afford_zone_zone_minerals = {
+	resource_stockpile_compare = { resource = minerals value >= 1000 }
+}
+
+# zone_food <- common\zones\00_zones.txt
+overmind_afford_zone_zone_food = {
+	resource_stockpile_compare = { resource = minerals value >= 1000 }
+}
+
+# zone_rare_crystals <- common\zones\00_zones.txt
+overmind_afford_zone_zone_rare_crystals = {
+	resource_stockpile_compare = { resource = minerals value >= 1000 }
+}
+
+# zone_volatile_motes <- common\zones\00_zones.txt
+overmind_afford_zone_zone_volatile_motes = {
+	resource_stockpile_compare = { resource = minerals value >= 1000 }
+}
+
+# zone_exotic_gases <- common\zones\00_zones.txt
+overmind_afford_zone_zone_exotic_gases = {
+	resource_stockpile_compare = { resource = minerals value >= 1000 }
+}
+
+# building_holo_theatres <- common\buildings\07_amenity_buildings.txt
+overmind_afford_building_building_holo_theatres = {
+	resource_stockpile_compare = { resource = minerals value >= 400 }
+}
+
+# building_luxury_residence <- common\buildings\07_amenity_buildings.txt
+overmind_afford_building_building_luxury_residence = {
+	resource_stockpile_compare = { resource = minerals value >= 400 }
+}
+
+# building_research_lab_1 <- common\buildings\05_research_buildings.txt
+overmind_afford_building_building_research_lab_1 = {
+	resource_stockpile_compare = { resource = minerals value >= 400 }
+}
+
+# building_factory_1 <- common\buildings\04_manufacturing_buildings.txt
+overmind_afford_building_building_factory_1 = {
+	resource_stockpile_compare = { resource = minerals value >= 400 }
+}
+
+# building_foundry_1 <- common\buildings\04_manufacturing_buildings.txt
+overmind_afford_building_building_foundry_1 = {
+	resource_stockpile_compare = { resource = minerals value >= 400 }
+}
+
+# assault_army <- common\armies\01_assault_armies.txt
+overmind_afford_army_assault_army = {
+	resource_stockpile_compare = { resource = minerals value >= 100 }
+}
+
+# starbase_outpost <- common\ship_sizes\00_starbases.txt
+overmind_afford_starbase_starbase_outpost = {
+	resource_stockpile_compare = { resource = alloys value >= 100 }
+	# 总裁席整改（2026-09-15）：必须同时过统一花销门（P6：能源门不豁免）
+	overmind_can_afford = { RESOURCE = alloys PAD = 100 }
+}
+
+
+# ============================================================
+# 传统的真实价格（由 defines 公式推导，按已采纳传统树分档）
+#   cost(n) = base + (linear * n) ** exponent
+#   n 取 num_tradition_categories * {per_tree}（游戏未暴露传统计数）
+#   base=300 linear=8.0 exponent=1.8
+# ============================================================
+overmind_afford_tradition = {
+	if = {
+		limit = { num_tradition_categories < 1 }
+		resource_stockpile_compare = { resource = unity value >= 300 }
+	}
+	else_if = {
+		limit = { num_tradition_categories < 2 }
+		resource_stockpile_compare = { resource = unity value >= 1702 }
+	}
+	else_if = {
+		limit = { num_tradition_categories < 3 }
+		resource_stockpile_compare = { resource = unity value >= 5182 }
+	}
+	else_if = {
+		limit = { num_tradition_categories < 4 }
+		resource_stockpile_compare = { resource = unity value >= 10429 }
+	}
+	else_if = {
+		limit = { num_tradition_categories < 5 }
+		resource_stockpile_compare = { resource = unity value >= 17300 }
+	}
+	else_if = {
+		limit = { num_tradition_categories < 6 }
+		resource_stockpile_compare = { resource = unity value >= 25703 }
+	}
+	else_if = {
+		limit = { num_tradition_categories < 7 }
+		resource_stockpile_compare = { resource = unity value >= 35570 }
+	}
+	else = {
+		resource_stockpile_compare = { resource = unity value >= 35570 }
+	}
+}

@@ -1,0 +1,297 @@
+# ============================================================
+# Stellaris Overmind — Autonomy Triggers
+#
+# Pure trigger predicates used by the autonomy brain.  Every name
+# and every keyword here was verified against the installed 4.4.6
+# data files (see scripts/audit_autonomy_script.py) — nothing is
+# guessed.
+#
+# Scope convention: these are evaluated in the caller's scope, so
+# most of them are planet-scoped while a few are country-scoped.
+# ============================================================
+
+
+# ------------------------------------------------------------
+# Master gate (country scope)
+# ------------------------------------------------------------
+overmind_autonomy_engaged = {
+	has_country_flag = overmind_autonomy
+	NOT = { has_country_flag = overmind_autonomy_paused }
+}
+
+
+# ------------------------------------------------------------
+# Economy, country scope
+# ------------------------------------------------------------
+
+# Monthly income is negative for a basic resource -> structural fix needed.
+overmind_autonomy_deficit_energy = {
+	has_monthly_income = {
+		resource = energy
+		value < 0
+	}
+}
+
+overmind_autonomy_deficit_minerals = {
+	has_monthly_income = {
+		resource = minerals
+		value < 0
+	}
+}
+
+overmind_autonomy_deficit_food = {
+	has_monthly_income = {
+		resource = food
+		value < 0
+	}
+}
+
+# 消费品月度净收入为负（2026-09-16 用户反馈「消费品一直赤字」新增）。
+# 消费品是最容易被忽视的隐性赤字：研究员/职员/娱乐岗位都在消耗它，
+# 而它不直接决定产能，只在破产（bankruptcy）时才让人察觉。
+overmind_autonomy_deficit_consumer_goods = {
+	has_monthly_income = {
+		resource = consumer_goods
+		value < 0
+	}
+}
+
+# D-26（2026-09-16 实机补缺）：S-11 合金救火分支引用了本触发器但从未定义
+# —— 引擎对未定义 scripted_trigger 静默判假，合金赤字救火从未生效
+# （实机 error.log: "Scripted Trigger overmind_autonomy_deficit_alloys is invalid"）。
+# 与同族保持同一形态：月收入为负即真。
+overmind_autonomy_deficit_alloys = {
+	has_monthly_income = {
+		resource = alloys
+		value < 0
+	}
+}
+
+
+# ------------------------------------------------------------
+# S-18 条件码派发表（规格 docs/月度干预架构规格_决策规则求值.md §3.2）
+# 求值器按规则的条件码调用同名触发器：码 1..10 / 99（兜底）。
+# 全部映射只用已在语料/审计背书的既有触发器，零新名字。
+# 码 10（可拓土）判据待接 S-4/S-7 扩张通道，v1 保守按假（注释占位）。
+# ------------------------------------------------------------
+overmind_cond_1 = {
+	overmind_autonomy_deficit_energy = yes
+}
+
+overmind_cond_2 = {
+	overmind_autonomy_deficit_food = yes
+}
+
+overmind_cond_3 = {
+	overmind_autonomy_deficit_consumer_goods = yes
+}
+
+overmind_cond_4 = {
+	overmind_autonomy_deficit_alloys = yes
+}
+
+overmind_cond_5 = {
+	is_at_war = yes
+}
+
+overmind_cond_6 = {
+	check_variable = { which = om_lex_threat value >= 3 }
+}
+
+overmind_cond_7 = {
+	any_situation = {
+		situation_progress > 50
+	}
+}
+
+overmind_cond_8 = {
+	any_owned_planet = {
+		overmind_autonomy_needs_housing = yes
+	}
+}
+
+overmind_cond_9 = {
+	any_owned_planet = {
+		overmind_autonomy_needs_amenities = yes
+	}
+}
+
+overmind_cond_10 = {
+	always = no
+}
+
+# ------------------------------------------------------------
+overmind_cond_99 = {
+	always = yes
+}
+
+# ---- S-19 条件码 v2（裁定 §4）：11-15 = era1..era5（D-31 补齐，原潜伏恒假）；
+# ---- 16-20 = 库存维度。满仓判据用 resource_stockpile_percent（自动跟随 cap）。
+overmind_cond_11 = {
+	check_variable = { which = om_era value = 1 }
+}
+overmind_cond_12 = {
+	check_variable = { which = om_era value = 2 }
+}
+overmind_cond_13 = {
+	check_variable = { which = om_era value = 3 }
+}
+overmind_cond_14 = {
+	check_variable = { which = om_era value = 4 }
+}
+overmind_cond_15 = {
+	check_variable = { which = om_era value = 5 }
+}
+overmind_cond_16 = {
+	resource_stockpile_compare = { resource = minerals value < 200 }
+}
+
+overmind_cond_17 = {
+	resource_stockpile_percent = { resource = energy value >= 0.9 }
+}
+
+overmind_cond_18 = {
+	resource_stockpile_percent = { resource = food value >= 0.9 }
+}
+
+overmind_cond_19 = {
+	resource_stockpile_compare = { resource = consumer_goods value < 200 }
+}
+
+overmind_cond_20 = {
+	resource_stockpile_compare = { resource = alloys value < 200 }
+}
+
+# Stockpile is critically low even if income is positive (still worth
+# topping up before it becomes an emergency).
+# S-19 必改1（裁定 §2）：单资源三支 —— 单资源支才能被「建对应区划」的
+# 定向救火动作安全消费（混合 OR 会在“食物低但矿物满”时误建矿区划）。
+# 阈值分档（裁定 §2 必改3）：触发救火 <200（矿/能）、<100（食）。
+overmind_autonomy_low_minerals = {
+	resource_stockpile_compare = { resource = minerals value < 200 }
+}
+
+overmind_autonomy_low_energy = {
+	resource_stockpile_compare = { resource = energy value < 200 }
+}
+
+overmind_autonomy_low_food = {
+	resource_stockpile_compare = { resource = food value < 100 }
+}
+
+overmind_autonomy_low_stockpile = {
+	OR = {
+		overmind_autonomy_low_minerals = yes
+		overmind_autonomy_low_energy = yes
+		overmind_autonomy_low_food = yes
+	}
+}
+
+overmind_autonomy_rich_enough_to_build = {
+	resource_stockpile_compare = { resource = minerals value >= 400 }
+}
+
+
+# ------------------------------------------------------------
+# S-1（策略规格书 §3）：统一花销门 —— 全部花销动作共用
+#   ① 库存不得低于安全垫（$PAD$）；
+#   ② 能源月收入必须为正（舰队/建筑维护都吃能源，赤字扩军
+#      是社区公认的崩溃起点）。能源门在任何姿态下都不豁免。
+# 用法：overmind_can_afford = { RESOURCE = alloys PAD = 300 }
+# ------------------------------------------------------------
+overmind_can_afford = {
+	resource_stockpile_compare = { resource = $RESOURCE$ value >= $PAD$ }
+	resource_income_compare = { resource = energy value > 0 }
+}
+
+
+# ------------------------------------------------------------
+# S-3（策略规格书 §4.3）：宣战六条件评估器
+#
+# 评估与执行分离：本触发器只回答「这个邻国现在是不是合格目标」，
+# 真正的 declare_war + 战争目标（wg_*）归 M3-4（依赖 M3-1 调研）。
+# 调用方式：any_neighbor_country = { overmind_can_declare_war = yes }
+# —— 在目标国 scope 内求值，root = 我方。
+#
+# 六条件对照（全部满足才宣战）：
+#   ① years_passed >= 30（专业化期之后）；且 < 150 封顶 —— 手册 era5
+#     「仅防御反击」，危机准备期不开新战端；
+#   ② 目标军力明显弱于我方。⚠️ D-24：relative_power 的 value 只接受定性
+#     token —— 原写法 `value < 0.7` 实机每月刷 22 条 error 且静默判假。
+#     现用 `<= inferior`（inferior 档 ≈ ≤0.67x；Paradox Wiki Empire 页 +
+#     defines 710-711 交叉确证），与规格书「< 70%」意图几乎精确对应。
+#     方向：在目标 scope 内 who = root，value = 目标/我方。
+#   ③ 我方能源/合金月收入为正 + 合金库存达安全垫 300（统一花销门）；
+#   ④ 目标不在联邦（has_federation，vanilla 高频触发器）—— v1 取规格书「目标国不在联邦**或**其联邦不在
+#     战争状态」的第一析支，联邦战状态检查留 M3-1 语料研究后放宽；
+#   ⑤ 不打灭国战 —— 触发器层的近似：灭国型民议目标（清洗者/吞噬蜂群/
+#     终结者）剔除，这类目标没有「有限战争」可言；战争目标本身的
+#     有限性约束在 M3-4 落地；
+#   ⑥ 威胁 >=3（S-5 动态评估值）豁免条件③的库存垫 —— 但能源收入门
+#     任何分支不豁免（P6）。「对方已宣战」在和平期评估语境下不可能
+#     成立（战争是双边的，彼时我方必已开战、走 WAR 相位战时分支），
+#     故豁免只收敛为威胁一项。
+# ------------------------------------------------------------
+overmind_can_declare_war = {
+	years_passed >= 30
+	years_passed < 150
+	relative_power = { who = root category = fleet value <= inferior }
+	has_federation = no
+	NOT = { has_valid_civic = civic_fanatic_purifiers }
+	NOT = { has_valid_civic = civic_hive_devouring_swarm }
+	NOT = { has_valid_civic = civic_machine_terminator }
+	OR = {
+		AND = {
+			root = { resource_income_compare = { resource = energy value > 0 } }
+			root = { resource_income_compare = { resource = alloys value > 0 } }
+			root = { overmind_can_afford = { RESOURCE = alloys PAD = 300 } }
+		}
+		AND = {
+			root = { check_variable = { which = om_lex_threat value >= 3 } }
+			root = { resource_income_compare = { resource = energy value > 0 } }
+			root = { resource_income_compare = { resource = alloys value > 0 } }
+		}
+	}
+}
+
+
+# ------------------------------------------------------------
+# Planet needs, planet scope
+# ------------------------------------------------------------
+
+overmind_autonomy_has_free_district_of_type = {
+	# $TYPE$ is supplied by the caller, e.g.
+	#   limit = { overmind_autonomy_has_free_district_of_type = { TYPE = district_city } }
+	num_free_districts = {
+		type = $TYPE$
+		value >= 1
+	}
+}
+
+overmind_autonomy_needs_housing = {
+	free_housing < 2
+	num_free_districts = { type = district_city value >= 1 }
+}
+
+overmind_autonomy_needs_jobs = {
+	num_unemployed > 0
+}
+
+overmind_autonomy_needs_amenities = {
+	free_amenities < 0
+}
+
+overmind_autonomy_has_building_slot = {
+	free_building_slots > 0
+}
+
+
+# S-19：救火专用 afford（垫 100）—— 矿物贫困陷阱的破鸡生蛋门。
+# 放手写文件的原因：生成物（overmind_afford.txt）重生成会抹掉手加条目
+# （裁定 §2 必改2 / D-28 修法记录）。走统一花销门（能源收入门不豁免 P6）。
+# 分档：触发救火 <200、救火态可建 ≥100、常态可建 ≥300。
+# ------------------------------------------------------------
+overmind_afford_district_district_mining_relief = {
+	resource_stockpile_compare = { resource = minerals value >= 100 }
+	overmind_can_afford = { RESOURCE = minerals PAD = 100 }
+}

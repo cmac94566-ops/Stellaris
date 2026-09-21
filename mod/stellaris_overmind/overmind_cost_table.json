@@ -1,0 +1,313 @@
+{
+  "charges": {
+    "district_generator": {
+      "minerals": 300
+    },
+    "district_mining": {
+      "minerals": 300
+    },
+    "district_farming": {
+      "minerals": 300
+    },
+    "district_city": {
+      "minerals": 500
+    },
+    "zone_industrial": {
+      "minerals": 1000
+    },
+    "zone_foundry": {
+      "minerals": 1000
+    },
+    "zone_factory": {
+      "minerals": 1000
+    },
+    "zone_research": {
+      "minerals": 1000
+    },
+    "zone_trade": {
+      "minerals": 1000
+    },
+    "zone_unity": {
+      "minerals": 1000
+    },
+    "zone_energy": {
+      "minerals": 1000
+    },
+    "zone_minerals": {
+      "minerals": 1000
+    },
+    "zone_food": {
+      "minerals": 1000
+    },
+    "zone_rare_crystals": {
+      "minerals": 1000
+    },
+    "zone_volatile_motes": {
+      "minerals": 1000
+    },
+    "zone_exotic_gases": {
+      "minerals": 1000
+    },
+    "building_holo_theatres": {
+      "minerals": 400
+    },
+    "building_luxury_residence": {
+      "minerals": 400
+    },
+    "building_research_lab_1": {
+      "minerals": 400
+    },
+    "building_factory_1": {
+      "minerals": 400
+    },
+    "building_foundry_1": {
+      "minerals": 400
+    },
+    "assault_army": {
+      "minerals": 100
+    },
+    "starbase_outpost": {
+      "alloys": 100
+    }
+  },
+  "charge_effect_names": [
+    "overmind_charge_army_assault_army",
+    "overmind_charge_building_building_factory_1",
+    "overmind_charge_building_building_foundry_1",
+    "overmind_charge_building_building_holo_theatres",
+    "overmind_charge_building_building_luxury_residence",
+    "overmind_charge_building_building_research_lab_1",
+    "overmind_charge_district_district_city",
+    "overmind_charge_district_district_farming",
+    "overmind_charge_district_district_generator",
+    "overmind_charge_district_district_mining",
+    "overmind_charge_starbase_starbase_outpost",
+    "overmind_charge_zone_zone_energy",
+    "overmind_charge_zone_zone_exotic_gases",
+    "overmind_charge_zone_zone_factory",
+    "overmind_charge_zone_zone_food",
+    "overmind_charge_zone_zone_foundry",
+    "overmind_charge_zone_zone_industrial",
+    "overmind_charge_zone_zone_minerals",
+    "overmind_charge_zone_zone_rare_crystals",
+    "overmind_charge_zone_zone_research",
+    "overmind_charge_zone_zone_trade",
+    "overmind_charge_zone_zone_unity",
+    "overmind_charge_zone_zone_volatile_motes",
+    "overmind_charge_tradition"
+  ],
+  "afford_trigger_names": [
+    "overmind_afford_army_assault_army",
+    "overmind_afford_building_building_factory_1",
+    "overmind_afford_building_building_foundry_1",
+    "overmind_afford_building_building_holo_theatres",
+    "overmind_afford_building_building_luxury_residence",
+    "overmind_afford_building_building_research_lab_1",
+    "overmind_afford_district_district_city",
+    "overmind_afford_district_district_farming",
+    "overmind_afford_district_district_generator",
+    "overmind_afford_district_district_mining",
+    "overmind_afford_starbase_starbase_outpost",
+    "overmind_afford_zone_zone_energy",
+    "overmind_afford_zone_zone_exotic_gases",
+    "overmind_afford_zone_zone_factory",
+    "overmind_afford_zone_zone_food",
+    "overmind_afford_zone_zone_foundry",
+    "overmind_afford_zone_zone_industrial",
+    "overmind_afford_zone_zone_minerals",
+    "overmind_afford_zone_zone_rare_crystals",
+    "overmind_afford_zone_zone_research",
+    "overmind_afford_zone_zone_trade",
+    "overmind_afford_zone_zone_unity",
+    "overmind_afford_zone_zone_volatile_motes",
+    "overmind_afford_tradition"
+  ],
+  "tradition_cost_brackets": [
+    [
+      1,
+      300
+    ],
+    [
+      2,
+      1702
+    ],
+    [
+      3,
+      5182
+    ],
+    [
+      4,
+      10429
+    ],
+    [
+      5,
+      17300
+    ],
+    [
+      6,
+      25703
+    ],
+    [
+      7,
+      35570
+    ]
+  ],
+  "generated_from": "D:\\SteamLibrary\\steamapps\\common\\Stellaris",
+  "tradition_modes": {
+    "1": {
+      "name": "tech",
+      "chain": [
+        "discovery",
+        "prosperity",
+        "supremacy",
+        "expansion",
+        "mercantile",
+        "harmony",
+        "adaptability",
+        "diplomacy"
+      ]
+    },
+    "2": {
+      "name": "wide",
+      "chain": [
+        "expansion",
+        "prosperity",
+        "adaptability",
+        "discovery",
+        "mercantile",
+        "supremacy",
+        "harmony",
+        "diplomacy"
+      ]
+    },
+    "3": {
+      "name": "war",
+      "chain": [
+        "supremacy",
+        "prosperity",
+        "domination",
+        "discovery",
+        "mercantile",
+        "harmony",
+        "adaptability",
+        "diplomacy"
+      ]
+    },
+    "4": {
+      "name": "diplo",
+      "chain": [
+        "diplomacy",
+        "mercantile",
+        "prosperity",
+        "discovery",
+        "harmony",
+        "adaptability",
+        "expansion",
+        "supremacy"
+      ]
+    }
+  },
+  "perk_modes": {
+    "1": {
+      "name": "tech",
+      "chain": [
+        "ap_technological_ascendancy",
+        "ap_transcendent_learning",
+        "ap_one_vision",
+        "ap_galactic_wonders"
+      ]
+    },
+    "2": {
+      "name": "wide",
+      "chain": [
+        "ap_mastery_of_nature",
+        "ap_voidborn",
+        "ap_world_shaper",
+        "ap_arcology_project"
+      ]
+    },
+    "3": {
+      "name": "war",
+      "chain": [
+        "ap_galactic_force_projection",
+        "ap_lord_of_war",
+        "ap_colossus",
+        "ap_master_builders"
+      ]
+    },
+    "4": {
+      "name": "trade",
+      "chain": [
+        "ap_universal_transactions",
+        "ap_executive_vigor",
+        "ap_imperial_prerogative",
+        "ap_galactic_contender"
+      ]
+    }
+  },
+  "tree_nodes": {
+    "discovery": [
+      "tr_discovery_to_boldly_go",
+      "tr_discovery_databank_uplinks",
+      "tr_discovery_science_division",
+      "tr_discovery_polytechnic_education",
+      "tr_discovery_faith_in_science"
+    ],
+    "prosperity": [
+      "tr_prosperity_sct",
+      "tr_prosperity_administrative_operations",
+      "tr_prosperity_public_works",
+      "tr_prosperity_interstellar_franchising",
+      "tr_prosperity_pursuit_of_profit"
+    ],
+    "supremacy": [
+      "tr_supremacy_fleet_logistical_corps",
+      "tr_supremacy_master_shipwrights",
+      "tr_supremacy_war_games",
+      "tr_supremacy_overwhelming_force",
+      "tr_supremacy_great_game"
+    ],
+    "expansion": [
+      "tr_expansion_colonization_fever",
+      "tr_expansion_a_new_life",
+      "tr_expansion_courier_network",
+      "tr_expansion_reach_for_the_stars",
+      "tr_expansion_galactic_ambition"
+    ],
+    "mercantile": [
+      "tr_mercantile_trickle_up_economics",
+      "tr_mercantile_commercial_enterprise",
+      "tr_mercantile_adaptive_economic_policies",
+      "tr_mercantile_marketplace_of_better_ideas",
+      "tr_mercantile_insider_trading"
+    ],
+    "harmony": [
+      "tr_harmony_the_greater_good",
+      "tr_harmony_kinship",
+      "tr_harmony_utopian_dream",
+      "tr_harmony_harmonious_directives",
+      "tr_harmony_mind_and_body"
+    ],
+    "adaptability": [
+      "tr_adaptability_recycling",
+      "tr_adaptability_survival_fittest",
+      "tr_adaptability_environmental_diversification",
+      "tr_adaptability_adaptive_ecology",
+      "tr_adaptability_appropriation"
+    ],
+    "diplomacy": [
+      "tr_diplomacy_the_federation",
+      "tr_diplomacy_entente_coordination",
+      "tr_diplomacy_diplomatic_networking",
+      "tr_diplomacy_direct_diplomacy",
+      "tr_diplomacy_eminent_diplomats"
+    ],
+    "domination": [
+      "tr_domination_colonial_viceroys",
+      "tr_domination_imperious_architecture",
+      "tr_domination_grand_council",
+      "tr_domination_judgment_corps",
+      "tr_domination_workplace_motivators"
+    ]
+  }
+}

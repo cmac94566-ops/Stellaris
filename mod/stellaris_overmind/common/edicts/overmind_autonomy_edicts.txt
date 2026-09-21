@@ -1,0 +1,101 @@
+# ============================================================
+# Stellaris Overmind — Autonomy Edicts（零控制台开关）
+#
+# 这是给玩家的"人手开关"：不开控制台、不碰存档，
+# 只在帝国法令面板里点一下，就能让主脑自治层上线或下线。
+#
+# 为什么用 edict 而不是 decision：
+#   decision 在 4.4.6 里基本是行星作用域（靠 owned_planets_only 区分），
+#   而 edict 天生就是国家作用域、天生就是 UI 可点的开关形态，
+#   而且官方 README 明确支持 `effect`（"an effect that is executed
+#   when this trigger activates"）。
+#
+# 费用象征性收 1 点凝聚力，避免出现"完全免费的法令"这种异常形态。
+#
+# ⚠️ AI 权重键名（实机 error.log + 全库计数校正，2026-09-15）
+#
+# 实机 error.log 报：`Unexpected token: ai_weight`（两处，line 42 / 72）。
+# 三条证据链：
+#   1. 官方文档 common/edicts/99_README_EDICTS.txt 第 13 行写的是 `ai_will_do`；
+#   2. 但 vanilla edicts 目录实测计数是 **ai_weight 142 处 : ai_will_do 1 处**，
+#      而那唯一的 1 处就在上面这行 README 注释里（`grep -rn` 确认无实装）；
+#   3. 全游戏 ai_will_do 只出现在 species_rights(13) + patrons(1) + 该 README，
+#      且 species_rights 里它的子键是 `factor`，不是 `weight`。
+#
+# ⇒ 判定：**edict 文档标称 ai_will_do，实际实装必须用 ai_weight**。
+#   README 是过期/错误的文档，engine 只认 ai_weight。
+#   （矛盾点如实保留在此，不假装已经全知。）
+#
+# 附加说明：本 mod 接管玩家帝国，potential 里的 `is_ai = no` 已保证
+# 游戏自带 AI 不会碰这条法令，因此 ai_weight 严格说是冗余字段。
+# 保留它是为了在"AI 视角"下也能被评估，并消除 error.log 噪音。
+# 万一实机仍报 unexpected token，删掉该块即可，功能不受影响。
+# ============================================================
+
+overmind_autonomy_on = {
+	length = -1
+	icon = "GFX_edict_type_policy"
+
+	resources = {
+		category = edicts
+		cost = {
+			unity = 1
+		}
+	}
+
+	potential = {
+		is_ai = no
+		NOT = { has_country_flag = overmind_autonomy }
+	}
+
+	allow = {
+		always = yes
+	}
+
+	effect = {
+		overmind_autonomy_engage = yes
+	}
+
+	# 权重 0 = 游戏自带 AI 永远不会主动采纳这条法令。
+	# 见文件头「AI 权重键名」一节：本目录实装用的是 ai_weight。
+	ai_weight = {
+		weight = 0
+	}
+}
+
+
+overmind_autonomy_off = {
+	length = -1
+	icon = "GFX_edict_type_policy"
+
+	resources = {
+		category = edicts
+		cost = {
+			unity = 1
+		}
+	}
+
+	# D-18（2026-09-15）：这里**故意不设** `is_ai = no`。
+	# 控制台 `human_ai on` 会把玩家国家判定为 AI —— 若 potential 里带这条，
+	# 两条法令会同时从面板消失，模组变成关不掉（自治层由
+	# `overmind_autonomy` flag 驱动，照跑不停）。紧急出口必须无条件可达。
+	# on 法令保留 `is_ai = no`，防止原版 AI 自己打开我们的引擎；
+	# AI 误采纳的风险由下面的 ai_weight = 0 兜住。
+	potential = {
+		has_country_flag = overmind_autonomy
+	}
+
+	allow = {
+		always = yes
+	}
+
+	effect = {
+		overmind_autonomy_disengage = yes
+	}
+
+	# 权重 0 = 游戏自带 AI 永远不会主动采纳这条法令。
+	# 见文件头「AI 权重键名」一节：本目录实装用的是 ai_weight。
+	ai_weight = {
+		weight = 0
+	}
+}

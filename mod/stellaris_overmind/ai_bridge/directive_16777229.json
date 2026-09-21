@@ -1,0 +1,8 @@
+{
+  "action": "COLONIZE",
+  "country_id": 16777229,
+  "parameters": {},
+  "reason": "Given the empire's focus on minerals_first and the current state of having no designated colonies, colonizing the k-star class planet is the most strategic move. This aligns with the empire's need to secure resources early in the game, as indicated by the minerals_first focus and the current mineral stockpile. Additionally, the planet's size of 34 provides ample room for future development and stabilization, which is crucial for long-term growth.",
+  "target": "STAR_NAME_1_OF_1",
+  "timestamp": "2201.1"
+}

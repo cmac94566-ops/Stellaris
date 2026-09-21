@@ -1,0 +1,179 @@
+# Stellaris Overmind - Configuration
+# Copy to config.toml and edit for your setup.
+
+log_level = "INFO"
+max_retries = 2
+
+[stellaris]
+# Stellaris installation directory (Steam)
+# Windows: typically "C:/Program Files (x86)/Steam/steamapps/common/Stellaris"
+install_dir = "C:/Program Files (x86)/Steam/steamapps/common/Stellaris"
+
+# Stellaris user data directory (where mods, saves, and logs live)
+# Windows: typically ~/Documents/Paradox Interactive/Stellaris
+# If using OneDrive: ~/OneDrive/Documents/Paradox Interactive/Stellaris
+user_data_dir = "C:/Users/YOUR_USER/Documents/Paradox Interactive/Stellaris"
+
+# Mod name (folder inside user_data_dir/mod/)
+mod_name = "stellaris_overmind"
+
+[llm]
+# Provider options: "qwen-vllm" | "openai-compat" | "ollama" | "lm-studio" | "stub"
+provider = "qwen-vllm"
+
+# Mode: "local" (default), "online" (cloud API only), "hybrid" (local + cloud fallback)
+mode = "local"
+
+# vLLM endpoint (default Docker compose exposes on 8000)
+base_url = "http://localhost:8000"
+
+# Model ID as registered in vLLM
+# For 7B GPTQ-Int4 (~6GB VRAM, recommended): "Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4"
+# For 7B full precision (~16GB VRAM): "Qwen/Qwen2.5-7B-Instruct"
+# For 3B (~7GB VRAM): "Qwen/Qwen2.5-3B-Instruct"
+model = "Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4"
+
+max_tokens = 256
+temperature = 0.3
+timeout_s = 30.0
+
+# Token optimization: minified JSON in prompts (saves ~30% tokens)
+compact_json = true
+# Cache static prompt prefixes between ticks
+prompt_cache = true
+
+# Only needed for remote API providers
+# api_key = ""
+
+# Online provider — used when mode = "online" or "hybrid"
+# Any OpenAI-compatible API: OpenRouter, Together, Groq, Azure AI Foundry, etc.
+# [llm.online]
+# base_url = "https://openrouter.ai/api/v1"
+# model = "qwen/qwen-2.5-72b-instruct"
+# api_key = ""  # set via OVERMIND_LLM_ONLINE_API_KEY env var
+# max_tokens = 256
+# temperature = 0.3
+# timeout_s = 60.0
+
+# Azure AI Foundry example:
+# [llm.online]
+# base_url = "https://your-project.services.ai.azure.com/models"
+# model = "Qwen2.5-72B-Instruct"
+# api_key = ""  # set via OVERMIND_LLM_ONLINE_API_KEY or AZURE_AI_KEY
+
+# ─── LM Studio example ───
+# LM Studio exposes an OpenAI-compatible API on localhost:1234.
+# Load a model in the GUI, then use these settings:
+#
+# [llm]
+# provider = "lm-studio"
+# base_url = "http://localhost:1234"
+# model = "qwen2.5-3b-instruct"       # must match the loaded model name
+# max_tokens = 256
+# temperature = 0.3
+#
+# Recommended LM Studio model settings for Stellaris Overmind:
+#   Context Length:            4096    (our prompts are ~1.5-3K tokens)
+#   GPU Offload:               max    (all layers — critical for speed)
+#   Evaluation Batch Size:     512    (prompt processing speed)
+#   Max Concurrent Predictions:  4    (enables parallel sub-agent calls)
+#   Unified KV Cache:           ON    (saves memory)
+#   Offload KV Cache to GPU:    ON    (faster inference)
+#   Keep Model in Memory:       ON    (avoids reload between calls)
+
+[bridge]
+# Autosave directory — the engine watches this for new .sav files.
+# If this directory exists, the engine uses autosave mode (recommended).
+# No Clausewitz state exporter mod is needed in this mode.
+save_dir = "C:/Users/YOUR_USER/Documents/Paradox Interactive/Stellaris/save games"
+
+# Player name — auto-detected from the save file if left empty.
+# Set this if auto-detection picks the wrong empire.
+# player_name = ""
+
+# Directive audit output directory.
+bridge_dir = "C:/Users/YOUR_USER/Documents/Paradox Interactive/Stellaris/mod/stellaris_overmind/ai_bridge"
+
+# Optional AI directive injector directory. Defaults to the parent of save_dir.
+# The injector accepts only generated `event overmind.<id> <country_id>` commands.
+# command_dir = "C:/Users/YOUR_USER/Documents/Paradox Interactive/Stellaris"
+
+# How often to check for new saves (seconds)
+poll_interval_s = 2.0
+
+[empire]
+# Auto-detect: reads ethics/civics/origin/government from the save file.
+# No manual config needed — works with any empire.
+auto_detect = true
+
+# Manual override: set auto_detect = false and specify your empire.
+# Must match what you pick in the Stellaris launcher.
+# auto_detect = false
+# ethics = ["Fanatic Authoritarian", "Spiritualist"]
+# civics = ["Corvée System", "Planet Forgers"]
+# traits = ["Ingenious", "Industrious"]
+# origin = "Cybernetic Creed"
+# government = "Imperial"
+
+[target]
+# Which empires the Overmind controls.
+# "player" — control the human player's empire (default)
+# "ai"     — control AI empires (replaces Stellaris' built-in AI)
+mode = "player"
+
+# AI mode only: which AI country IDs to control (empty = all AI empires)
+# ai_country_ids = [1, 2, 5]
+
+# AI mode only: country IDs to skip
+# ai_exclude_ids = []
+
+# AI mode only: skip Fallen Empires (they have special behavior)
+ai_exclude_fallen = true
+
+[multi_agent]
+# Enable multi-agent council mode (experimental)
+# When false, uses the existing single-prompt decision engine.
+enabled = false
+
+# Run sub-agents in parallel (uses threading)
+parallel = true
+
+# Use LLM for arbitration in democratic/oligarchic governments.
+# When false, arbitration is always code-based (faster).
+arbiter_uses_llm = true
+
+[planner]
+# Enable strategic planner (runs every N in-game years or on phase transitions)
+# Produces long-term context injected into sub-agent prompts.
+enabled = false
+
+# Provider: "same" uses the main LLM, or set a separate endpoint.
+provider = "same"
+# base_url = "http://localhost:11434"   # e.g. Ollama for a larger model
+# model = "qwen2.5:14b"
+
+# How often to re-plan (in-game years).  Also re-plans on phase transitions.
+interval_years = 5
+
+# Planner gets more output room than decision agents.
+max_tokens = 512
+temperature = 0.4
+
+[training]
+# Training pipeline settings for creating a Stellaris-specific model.
+replay_dir = "training/replay_buffer"
+
+# Minimum composite score for a decision to be included in SFT training data
+sft_threshold = 0.3
+
+# Minimum score gap between chosen/rejected for DPO pairs
+dpo_margin = 0.2
+
+# Teacher model for distillation (used by scripts/collect_teacher.py)
+# teacher_model = "qwen/qwen-2.5-72b-instruct"
+# teacher_base_url = "https://openrouter.ai/api/v1"
+# teacher_api_key = ""   # set via OVERMIND_TEACHER_API_KEY env var
+
+# Quantization method for final model export
+quantize_method = "gptq"   # gptq | awq
+quantize_bits = 4

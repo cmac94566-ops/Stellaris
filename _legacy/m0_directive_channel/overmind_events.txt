@@ -1,0 +1,350 @@
+# ============================================================
+# Stellaris Overmind — Events
+#
+# These events receive targeted directives from the Python AI engine and
+# execute the corresponding macro actions.
+#
+# TWO transport families:
+#
+#   A) AI family  (overmind.101-111)  trigger is_ai = yes
+#      Used when config.target.mode = "ai" — the engine drives the
+#      computer empires by replacing their native AI posture.
+#
+#   B) PLAYER family (overmind.201-211)  trigger is_ai = no
+#      Used when config.target.mode = "player" — the engine drives the
+#      human player's own empire.  These are HARD-ER actions: several of
+#      them issue structural commands (set_colony_type, set_policy)
+#      rather than merely applying a timed modifier.
+#
+# The Python engine writes a JSON audit record plus an allowlisted country-event
+# command. Clausewitz cannot read the JSON directly; the injector calls the
+# matching country event with its country ID.
+#
+# This design supports both player mode (1 empire) and AI mode
+# (multiple empires each getting their own directive).
+# ============================================================
+
+namespace = overmind
+
+
+# ============================================================
+# Event 1: Game start initialization (Player mode)
+# ============================================================
+country_event = {
+	id = overmind.1
+	hide_window = yes
+	is_triggered_only = yes
+
+	trigger = {
+		is_ai = no
+	}
+
+	immediate = {
+		set_country_flag = overmind_active
+		log = "[OVERMIND] Stellaris Overmind initialized for [This.GetName]"
+	}
+}
+
+
+# ============================================================
+# Event 2: Game start initialization (AI mode)
+# Activates for AI empires so the Python engine can control them.
+# Only fires if the global overmind_ai_mode flag is set.
+# ============================================================
+country_event = {
+	id = overmind.2
+	hide_window = yes
+	is_triggered_only = yes
+
+	trigger = {
+		is_ai = yes
+		has_global_flag = overmind_ai_mode
+		NOT = { has_country_flag = overmind_active }
+		# Skip primitives, enclaves, etc.
+		is_country_type = default
+	}
+
+	immediate = {
+		set_country_flag = overmind_active
+		log = "[OVERMIND] AI mode: initialized for [This.GetName] (country [This.GetID])"
+	}
+}
+
+
+# ============================================================
+# Events 101-111: Direct AI directive transport
+#
+# The external injector calls `event overmind.<id> <country_id>`.
+# Each event is scoped by the target country ID, rejects non-AI countries,
+# and only applies an existing native-AI modifier/personality effect.
+# ============================================================
+country_event = {
+	id = overmind.101
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = yes is_country_type = default }
+	immediate = { set_country_flag = overmind_active overmind_action_expand = yes }
+}
+
+country_event = {
+	id = overmind.102
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = yes is_country_type = default }
+	immediate = { set_country_flag = overmind_active overmind_action_build_fleet = yes }
+}
+
+country_event = {
+	id = overmind.103
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = yes is_country_type = default }
+	immediate = { set_country_flag = overmind_active overmind_action_improve_economy = yes }
+}
+
+country_event = {
+	id = overmind.104
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = yes is_country_type = default }
+	immediate = { set_country_flag = overmind_active overmind_action_focus_tech = yes }
+}
+
+country_event = {
+	id = overmind.105
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = yes is_country_type = default }
+	immediate = { set_country_flag = overmind_active overmind_action_diplomacy = yes }
+}
+
+country_event = {
+	id = overmind.106
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = yes is_country_type = default }
+	immediate = { set_country_flag = overmind_active overmind_action_prepare_war = yes }
+}
+
+country_event = {
+	id = overmind.107
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = yes is_country_type = default }
+	immediate = { set_country_flag = overmind_active overmind_action_defend = yes }
+}
+
+country_event = {
+	id = overmind.108
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = yes is_country_type = default }
+	immediate = { set_country_flag = overmind_active overmind_action_consolidate = yes }
+}
+
+country_event = {
+	id = overmind.109
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = yes is_country_type = default }
+	immediate = { set_country_flag = overmind_active overmind_action_colonize = yes }
+}
+
+country_event = {
+	id = overmind.110
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = yes is_country_type = default }
+	immediate = { set_country_flag = overmind_active overmind_action_build_starbase = yes }
+}
+
+country_event = {
+	id = overmind.111
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = yes is_country_type = default }
+	immediate = { set_country_flag = overmind_active overmind_action_espionage = yes }
+}
+
+
+# ============================================================
+# Event 100: Legacy AI-only directive reader (superseded by .200)
+# Kept so older installs that call overmind.100 still work.
+# ============================================================
+country_event = {
+	id = overmind.100
+	hide_window = yes
+	is_triggered_only = yes
+
+	trigger = {
+		has_country_flag = overmind_active
+		has_country_flag = overmind_directive_ready
+	}
+
+	immediate = {
+		# Read the action variable (scoped to THIS country) and dispatch
+		# Action codes: 1=EXPAND 2=BUILD_FLEET 3=IMPROVE_ECONOMY
+		# 4=FOCUS_TECH 5=DIPLOMACY 6=PREPARE_WAR
+		# 7=DEFEND 8=CONSOLIDATE 9=COLONIZE 10=BUILD_STARBASE
+		# 11=ESPIONAGE
+		overmind_dispatch_ai = yes
+
+		# Clear the per-country directive flag and variable
+		remove_country_flag = overmind_directive_ready
+		set_variable = { which = overmind_action value = 0 }
+
+		log = "[OVERMIND] Directive executed for [This.GetName]"
+	}
+}
+
+
+# ============================================================
+# Events 201-211: PLAYER directive transport  (is_ai = no)
+#
+# Hard-control family.  Called as `event overmind.2NN <player_country_id>`
+# or typed straight into the player's own console with no argument
+# (console scope = player empire).
+#
+# These do REAL work where the game allows it, not just timed modifiers:
+#   .201 EXPAND          -> expansion focus modifier
+#   .202 BUILD_FLEET     -> militarised economy + fleet focus
+#   .203 IMPROVE_ECONOMY -> colony automation on core planets  [STRUCTURAL]
+#   .204 FOCUS_TECH      -> research focus + academic privilege
+#   .205 DIPLOMACY       -> cooperative stance + diplomacy modifier
+#   .206 PREPARE_WAR     -> unrestricted wars + military economy  [STRUCTURAL]
+#   .207 DEFEND          -> defensive posture + civilian-adjacent economy
+#   .208 CONSOLIDATE     -> civilian economy + colony automation
+#   .209 COLONIZE        -> colonisation focus modifier
+#   .210 BUILD_STARBASE  -> starbase focus modifier
+#   .211 ESPIONAGE       -> espionage focus modifier
+# ============================================================
+
+country_event = {
+	id = overmind.201
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = no }
+	immediate = { set_country_flag = overmind_active overmind_player_action_expand = yes }
+}
+
+country_event = {
+	id = overmind.202
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = no }
+	immediate = { set_country_flag = overmind_active overmind_player_action_build_fleet = yes }
+}
+
+country_event = {
+	id = overmind.203
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = no }
+	immediate = { set_country_flag = overmind_active overmind_player_action_improve_economy = yes }
+}
+
+country_event = {
+	id = overmind.204
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = no }
+	immediate = { set_country_flag = overmind_active overmind_player_action_focus_tech = yes }
+}
+
+country_event = {
+	id = overmind.205
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = no }
+	immediate = { set_country_flag = overmind_active overmind_player_action_diplomacy = yes }
+}
+
+country_event = {
+	id = overmind.206
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = no }
+	immediate = { set_country_flag = overmind_active overmind_player_action_prepare_war = yes }
+}
+
+country_event = {
+	id = overmind.207
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = no }
+	immediate = { set_country_flag = overmind_active overmind_player_action_defend = yes }
+}
+
+country_event = {
+	id = overmind.208
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = no }
+	immediate = { set_country_flag = overmind_active overmind_player_action_consolidate = yes }
+}
+
+country_event = {
+	id = overmind.209
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = no }
+	immediate = { set_country_flag = overmind_active overmind_player_action_colonize = yes }
+}
+
+country_event = {
+	id = overmind.210
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = no }
+	immediate = { set_country_flag = overmind_active overmind_player_action_build_starbase = yes }
+}
+
+country_event = {
+	id = overmind.211
+	hide_window = yes
+	is_triggered_only = yes
+	trigger = { is_ai = no }
+	immediate = { set_country_flag = overmind_active overmind_player_action_espionage = yes }
+}
+
+
+# ============================================================
+# Event 200: Legacy monthly directive reader (heartbeat)
+# Uses per-country flags and variables — each empire gets its
+# own directive independently.  No global state shared.
+#
+# Works for BOTH player and AI countries now.  It dispatches to
+# the family matching the country type.
+# ============================================================
+country_event = {
+	id = overmind.200
+	hide_window = yes
+	is_triggered_only = yes
+
+	trigger = {
+		has_country_flag = overmind_active
+		has_country_flag = overmind_directive_ready
+	}
+
+	immediate = {
+		# Read the action variable (scoped to THIS country) and dispatch
+		# Action codes: 1=EXPAND 2=BUILD_FLEET 3=IMPROVE_ECONOMY
+		# 4=FOCUS_TECH 5=DIPLOMACY 6=PREPARE_WAR
+		# 7=DEFEND 8=CONSOLIDATE 9=COLONIZE 10=BUILD_STARBASE
+		# 11=ESPIONAGE
+
+		if = {
+			limit = { is_ai = yes }
+			overmind_dispatch_ai = yes
+		}
+		else = {
+			overmind_dispatch_player = yes
+		}
+
+		# Clear the per-country directive flag and variable
+		remove_country_flag = overmind_directive_ready
+		set_variable = { which = overmind_action value = 0 }
+
+		log = "[OVERMIND] Directive executed for [This.GetName]"
+	}
+}

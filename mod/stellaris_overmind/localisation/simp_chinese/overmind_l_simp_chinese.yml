@@ -1,0 +1,7 @@
+﻿l_simp_chinese:
+ opinion_overmind_goodwill:0 "主脑外交示好"
+ opinion_overmind_goodwill_desc:0 "主脑已指示其外交官改善与我们的关系。"
+ overmind_autonomy_on:0 "主脑：启动自治"
+ overmind_autonomy_on_desc:0 "让主脑接管本国日常决策。它会每月自检帝国状态，按大模型写下的《法案》自动建设区划、专业区、民生与科研设施，按战略调整舰队姿态与经济政策，并逐年修补外交关系。\n\n注意：本 mod 修改了 common 与 events 目录，会使校验码变动，因此本局无法获得成就。"
+ overmind_autonomy_off:0 "主脑：停止自治"
+ overmind_autonomy_off_desc:0 "关闭主脑自治，恢复由你亲自操作本国。已经建成的设施与已改的政策不会回退。"

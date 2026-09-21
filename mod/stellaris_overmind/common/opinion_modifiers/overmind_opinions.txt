@@ -1,0 +1,21 @@
+# ============================================================
+# Stellaris Overmind — Opinion Modifiers
+#
+# Referenced by the autonomy layer's annual diplomacy pass
+# (overmind_autonomy_annual, see
+# common/scripted_effects/overmind_autonomy.txt).  Lives in the
+# mod so vanilla files stay untouched.
+# ============================================================
+
+# Applied by the player's annual diplomacy pass to every
+# non-hostile default country, nudging them toward good relations.
+opinion_overmind_goodwill = {
+	opinion = {
+		base = 25
+	}
+
+	# A modest, self-decaying goodwill that refreshes each directive.
+	decay = {
+		base = 1
+	}
+}

@@ -1,0 +1,8 @@
+{
+  "action": "BUILD_FLEET",
+  "country_id": 16777232,
+  "parameters": {},
+  "reason": "Minimal fleet for early defense (fast path)",
+  "target": null,
+  "timestamp": "2201.1"
+}

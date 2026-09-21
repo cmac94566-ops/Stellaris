@@ -1,0 +1,695 @@
+# ============================================================
+# Stellaris Overmind — Scripted Effects (Action Executor)
+#
+# Each macro action from the LLM is mapped to a scripted effect.
+# The LLM decides WHAT to do; Stellaris handles the HOW.
+#
+# Two families:
+#   overmind_action_*         -> AI empires  (timed modifiers, soft)
+#   overmind_player_action_*  -> player empire (real structural work)
+#
+# IMPORTANT: Each action FIRST removes all previous overmind
+# modifiers to prevent stacking, then applies the new one.
+# ============================================================
+
+# --- Variable holding the current directive action code (1-11) ---
+overmind_action_code = 0
+
+
+# --- Dispatcher: route the current overmind_action variable to the
+#     correct family.  Called by the monthly heartbeat events.
+#
+#     For AI countries the AI family runs; for the player the player
+#     family runs.  Guarded by is_ai so only ONE family ever applies,
+#     avoiding double modifier application.
+overmind_dispatch_ai = {
+	if = {
+		limit = { is_ai = yes }
+		overmind_run_action_code = yes
+	}
+}
+
+overmind_dispatch_player = {
+	if = {
+		limit = { is_ai = no }
+		overmind_run_action_code = yes
+	}
+}
+
+# --- Shared action-code router.  Reads `overmind_action` on THIS country
+#     and calls the matching effect for the family that applies. ---
+overmind_run_action_code = {
+	if = {
+		limit = { is_ai = yes }
+		overmind_run_ai_action = yes
+	}
+	else = {
+		overmind_run_player_action = yes
+	}
+}
+
+overmind_run_ai_action = {
+	if = {
+		limit = { check_variable = { which = overmind_action value = 1 } }
+		overmind_action_expand = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 2 } }
+		overmind_action_build_fleet = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 3 } }
+		overmind_action_improve_economy = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 4 } }
+		overmind_action_focus_tech = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 5 } }
+		overmind_action_diplomacy = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 6 } }
+		overmind_action_prepare_war = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 7 } }
+		overmind_action_defend = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 8 } }
+		overmind_action_consolidate = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 9 } }
+		overmind_action_colonize = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 10 } }
+		overmind_action_build_starbase = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 11 } }
+		overmind_action_espionage = yes
+	}
+
+	# Flush the code so it does not re-fire
+	set_variable = { which = overmind_action value = 0 }
+}
+
+overmind_run_player_action = {
+	if = {
+		limit = { check_variable = { which = overmind_action value = 1 } }
+		overmind_player_action_expand = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 2 } }
+		overmind_player_action_build_fleet = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 3 } }
+		overmind_player_action_improve_economy = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 4 } }
+		overmind_player_action_focus_tech = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 5 } }
+		overmind_player_action_diplomacy = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 6 } }
+		overmind_player_action_prepare_war = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 7 } }
+		overmind_player_action_defend = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 8 } }
+		overmind_player_action_consolidate = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 9 } }
+		overmind_player_action_colonize = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 10 } }
+		overmind_player_action_build_starbase = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_action value = 11 } }
+		overmind_player_action_espionage = yes
+	}
+
+	# Flush the code so it does not re-fire
+	set_variable = { which = overmind_action value = 0 }
+}
+
+
+# --- Helper: remove all overmind modifiers before applying new ---
+overmind_clear_modifiers = {
+	remove_modifier = overmind_expansion_focus
+	remove_modifier = overmind_military_focus
+	remove_modifier = overmind_economy_focus
+	remove_modifier = overmind_research_focus
+	remove_modifier = overmind_diplomacy_focus
+	remove_modifier = overmind_war_preparation
+	remove_modifier = overmind_defense_focus
+	remove_modifier = overmind_consolidation
+	remove_modifier = overmind_colonize_focus
+	remove_modifier = overmind_starbase_focus
+	remove_modifier = overmind_espionage_focus
+	# Clear personality stance flags
+	remove_country_flag = overmind_aggressive
+	remove_country_flag = overmind_defensive
+	remove_country_flag = overmind_full_assault
+	# Clear fleet sub-type flags
+	remove_country_flag = overmind_fleet_corvettes
+	remove_country_flag = overmind_fleet_battleships
+	remove_country_flag = overmind_fleet_balanced
+	# Clear colonize preference flags
+	remove_country_flag = overmind_colonize_habitats
+	remove_country_flag = overmind_colonize_gaia
+}
+
+
+# --- EXPAND: Build outposts, claim systems ---
+overmind_action_expand = {
+	overmind_clear_modifiers = yes
+	log = "OVERMIND: Action: EXPAND for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_expansion_focus
+		days = 180
+	}
+}
+
+
+# --- BUILD_FLEET: Queue ship construction ---
+# Sub-action variable overmind_subaction controls fleet type:
+#   0 = balanced (default)
+#   1 = corvette swarm
+#   2 = battleship focus
+overmind_action_build_fleet = {
+	overmind_clear_modifiers = yes
+	set_country_flag = overmind_aggressive
+	log = "OVERMIND: Action: BUILD_FLEET for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_military_focus
+		days = 180
+	}
+	# Check sub-action for fleet type preference
+	if = {
+		limit = { check_variable = { which = overmind_subaction value = 1 } }
+		set_country_flag = overmind_fleet_corvettes
+		log = "OVERMIND: Fleet type: corvette swarm"
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_subaction value = 2 } }
+		set_country_flag = overmind_fleet_battleships
+		log = "OVERMIND: Fleet type: battleship focus"
+	}
+	else = {
+		set_country_flag = overmind_fleet_balanced
+		log = "OVERMIND: Fleet type: balanced"
+	}
+	set_variable = { which = overmind_subaction value = 0 }
+}
+
+
+# --- IMPROVE_ECONOMY: Build districts, buildings ---
+overmind_action_improve_economy = {
+	overmind_clear_modifiers = yes
+	log = "OVERMIND: Action: IMPROVE_ECONOMY for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_economy_focus
+		days = 180
+	}
+}
+
+
+# --- FOCUS_TECH: Prioritize research ---
+# Also enforces Academic Privilege living standard if available
+overmind_action_focus_tech = {
+	overmind_clear_modifiers = yes
+	log = "OVERMIND: Action: FOCUS_TECH for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_research_focus
+		days = 180
+	}
+	# Enforce research-friendly policies
+	if = {
+		limit = {
+			NOR = {
+				has_ethic = ethic_gestalt_consciousness
+				has_ethic = ethic_egalitarian
+			}
+			has_ethic = ethic_egalitarian
+		}
+		set_living_standard = { type = living_standard_academic_privilege }
+		log = "OVERMIND: Set Academic Privilege living standard"
+	}
+}
+
+
+# --- DIPLOMACY: Manage relations ---
+overmind_action_diplomacy = {
+	overmind_clear_modifiers = yes
+	log = "OVERMIND: Action: DIPLOMACY for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_diplomacy_focus
+		days = 180
+	}
+	# Enable diplomatic grants edict if available
+	if = {
+		limit = {
+			can_set_policy = {
+				policy = diplomatic_stance
+				option = diplo_stance_cooperative
+			}
+		}
+		set_policy = {
+			policy = diplomatic_stance
+			option = diplo_stance_cooperative
+			cooldown = yes
+		}
+		log = "OVERMIND: Set Cooperative diplomatic stance"
+	}
+}
+
+
+# --- PREPARE_WAR: Shift to war footing ---
+# Also enforces militarist-friendly policies
+overmind_action_prepare_war = {
+	overmind_clear_modifiers = yes
+	set_country_flag = overmind_aggressive
+	log = "OVERMIND: Action: PREPARE_WAR for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_war_preparation
+		days = 360
+	}
+	# If already at war, escalate to full assault (max combat_bravery)
+	if = {
+		limit = { is_at_war = yes }
+		remove_country_flag = overmind_aggressive
+		set_country_flag = overmind_full_assault
+		log = "OVERMIND: At war — full assault mode (combat_bravery=3.0)"
+	}
+	# Set aggressive war economy policies
+	if = {
+		limit = {
+			can_set_policy = {
+				policy = war_philosophy
+				option = unrestricted_wars
+			}
+		}
+		set_policy = {
+			policy = war_philosophy
+			option = unrestricted_wars
+			cooldown = yes
+		}
+		log = "OVERMIND: Set Unrestricted Wars policy"
+	}
+	if = {
+		limit = {
+			can_set_policy = {
+				policy = economic_policy
+				option = economic_policy_military
+			}
+		}
+		set_policy = {
+			policy = economic_policy
+			option = economic_policy_military
+			cooldown = yes
+		}
+		log = "OVERMIND: Set Militarist economic policy"
+	}
+}
+
+
+# --- DEFEND: Rally fleets, fortify chokepoints ---
+overmind_action_defend = {
+	overmind_clear_modifiers = yes
+	set_country_flag = overmind_defensive
+	log = "OVERMIND: Action: DEFEND for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_defense_focus
+		days = 180
+	}
+}
+
+
+# --- CONSOLIDATE: Pause expansion, fix deficits ---
+overmind_action_consolidate = {
+	overmind_clear_modifiers = yes
+	set_country_flag = overmind_defensive
+	log = "OVERMIND: Action: CONSOLIDATE for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_consolidation
+		days = 180
+	}
+	# Switch to civilian economy to recover
+	if = {
+		limit = {
+			can_set_policy = {
+				policy = economic_policy
+				option = economic_policy_civilian
+			}
+		}
+		set_policy = {
+			policy = economic_policy
+			option = economic_policy_civilian
+			cooldown = yes
+		}
+		log = "OVERMIND: Set Civilian economic policy"
+	}
+}
+
+
+# --- COLONIZE: Send colony ships ---
+# Sub-action variable overmind_subaction controls preference:
+#   0 = any habitable (default)
+#   1 = habitats only (Void Dwellers)
+#   2 = gaia worlds preferred
+overmind_action_colonize = {
+	overmind_clear_modifiers = yes
+	log = "OVERMIND: Action: COLONIZE for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_colonize_focus
+		days = 180
+	}
+	# Check sub-action for colonization preference
+	if = {
+		limit = { check_variable = { which = overmind_subaction value = 1 } }
+		set_country_flag = overmind_colonize_habitats
+		log = "OVERMIND: Colonize: habitats only"
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_subaction value = 2 } }
+		set_country_flag = overmind_colonize_gaia
+		log = "OVERMIND: Colonize: gaia preferred"
+	}
+	set_variable = { which = overmind_subaction value = 0 }
+}
+
+
+# --- BUILD_STARBASE: Upgrade/construct starbases ---
+overmind_action_build_starbase = {
+	overmind_clear_modifiers = yes
+	log = "OVERMIND: Action: BUILD_STARBASE for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_starbase_focus
+		days = 180
+	}
+}
+
+
+# --- ESPIONAGE: Build spy networks, run operations ---
+overmind_action_espionage = {
+	overmind_clear_modifiers = yes
+	log = "OVERMIND: Action: ESPIONAGE for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_espionage_focus
+		days = 180
+	}
+}
+
+
+# ============================================================
+# PLAYER ACTION FAMILY  (is_ai = no)
+#
+# These run on the human player's own empire.  They do real
+# structural work where the game permits it:
+#   - colony automation via set_colony_type (native auto-build)
+#   - policy changes via set_policy (state override, sticks)
+# plus the same timed modifier for visible feedback.
+#
+# Design note: we deliberately do NOT try to hard-code per-planet
+# building queues here.  Batch hard control is the job of the `run`
+# console channel (see scripts/overmind_run.py + engine/action_compiler.py),
+# which can address specific planet scopes with validated IDs.
+# The event layer handles the *structural posture* only.
+# ============================================================
+
+
+# --- Helper: turn on native colony automation for the player's core worlds.
+#     col_capital / col_foundry / col_generator etc. are vanilla colony
+#     automation types; the game then auto-builds per its own rules.
+overmind_player_enable_automation = {
+	if = {
+		limit = { is_ai = no }
+		every_owned_planet = {
+			limit = {
+				is_colony = yes
+				NOT = { has_planet_flag = overmind_no_auto }
+			}
+			# Only automate planets without a designation conflict
+			if = {
+				limit = { NOT = { is_planet_class = pc_habitat } }
+				set_colony_type = col_capital
+			}
+		}
+		log = "OVERMIND: Player colony automation enabled on core worlds"
+	}
+}
+
+
+# --- EXPAND: lean expansion, outpost tempo ---
+overmind_player_action_expand = {
+	overmind_clear_modifiers = yes
+	log = "OVERMIND: Player Action: EXPAND for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_expansion_focus
+		days = 365
+	}
+}
+
+
+# --- BUILD_FLEET: militarise the economy, push ship production ---
+overmind_player_action_build_fleet = {
+	overmind_clear_modifiers = yes
+	set_country_flag = overmind_aggressive
+	log = "OVERMIND: Player Action: BUILD_FLEET for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_military_focus
+		days = 365
+	}
+	if = {
+		limit = {
+			can_set_policy = {
+				policy = economic_policy
+				option = economic_policy_military
+			}
+		}
+		set_policy = {
+			policy = economic_policy
+			option = economic_policy_military
+			cooldown = yes
+		}
+		log = "OVERMIND: Player set military economy"
+	}
+}
+
+
+# --- IMPROVE_ECONOMY: hand core worlds to native automation ---
+overmind_player_action_improve_economy = {
+	overmind_clear_modifiers = yes
+	log = "OVERMIND: Player Action: IMPROVE_ECONOMY for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_economy_focus
+		days = 365
+	}
+	overmind_player_enable_automation = yes
+}
+
+
+# --- FOCUS_TECH: research focus + academic privilege ---
+overmind_player_action_focus_tech = {
+	overmind_clear_modifiers = yes
+	log = "OVERMIND: Player Action: FOCUS_TECH for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_research_focus
+		days = 365
+	}
+	if = {
+		limit = {
+			NOT = { has_ethic = ethic_gestalt_consciousness }
+		}
+		set_living_standard = { type = living_standard_academic_privilege }
+		log = "OVERMIND: Player set Academic Privilege living standard"
+	}
+	# NOTE: 4.4.6 has no `set_research_focus` effect.  Research target
+	# selection is a UI action with no script hook, so the player still
+	# picks the tech.  Use the `run` channel + research_technology for
+	# true hard control of research (see engine/action_compiler.py).
+}
+
+
+# --- DIPLOMACY: improve relations, cooperative stance ---
+overmind_player_action_diplomacy = {
+	overmind_clear_modifiers = yes
+	log = "OVERMIND: Player Action: DIPLOMACY for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_diplomacy_focus
+		days = 365
+	}
+	if = {
+		limit = {
+			can_set_policy = {
+				policy = diplomatic_stance
+				option = diplo_stance_cooperative
+			}
+		}
+		set_policy = {
+			policy = diplomatic_stance
+			option = diplo_stance_cooperative
+			cooldown = yes
+		}
+		log = "OVERMIND: Player set Cooperative diplomatic stance"
+	}
+	# Nudge relations with every playable country we are not at war with.
+	# (Vanilla has no `every_neighbor_country`; use every_country + filter,
+	#  and add_opinion_modifier, which is the real opinion effect.)
+	every_country = {
+		limit = {
+			is_country_type = default
+			NOT = { is_at_war_with = root }
+			NOT = { is_same_value = root }
+		}
+		add_opinion_modifier = { who = root modifier = opinion_overmind_goodwill }
+	}
+}
+
+
+# --- PREPARE_WAR: unrestricted wars + military economy ---
+overmind_player_action_prepare_war = {
+	overmind_clear_modifiers = yes
+	set_country_flag = overmind_aggressive
+	log = "OVERMIND: Player Action: PREPARE_WAR for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_war_preparation
+		days = 365
+	}
+	if = {
+		limit = { is_at_war = yes }
+		remove_country_flag = overmind_aggressive
+		set_country_flag = overmind_full_assault
+		log = "OVERMIND: Player at war — full assault mode"
+	}
+	if = {
+		limit = {
+			can_set_policy = {
+				policy = war_philosophy
+				option = unrestricted_wars
+			}
+		}
+		set_policy = {
+			policy = war_philosophy
+			option = unrestricted_wars
+			cooldown = yes
+		}
+		log = "OVERMIND: Player set Unrestricted Wars"
+	}
+	if = {
+		limit = {
+			can_set_policy = {
+				policy = economic_policy
+				option = economic_policy_military
+			}
+		}
+		set_policy = {
+			policy = economic_policy
+			option = economic_policy_military
+			cooldown = yes
+		}
+	}
+}
+
+
+# --- DEFEND: defensive fleet posture, fortify ---
+overmind_player_action_defend = {
+	overmind_clear_modifiers = yes
+	set_country_flag = overmind_defensive
+	log = "OVERMIND: Player Action: DEFEND for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_defense_focus
+		days = 365
+	}
+	# Pull every mobile fleet onto evasive so they stop dying in open space
+	# (vanilla trigger is `is_mobile`, not `is_fleet_in_use`)
+	every_owned_fleet = {
+		limit = { is_mobile = yes }
+		set_fleet_stance = evasive
+	}
+}
+
+
+# --- CONSOLIDATE: civilian economy, stop overextending ---
+overmind_player_action_consolidate = {
+	overmind_clear_modifiers = yes
+	set_country_flag = overmind_defensive
+	log = "OVERMIND: Player Action: CONSOLIDATE for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_consolidation
+		days = 365
+	}
+	if = {
+		limit = {
+			can_set_policy = {
+				policy = economic_policy
+				option = economic_policy_civilian
+			}
+		}
+		set_policy = {
+			policy = economic_policy
+			option = economic_policy_civilian
+			cooldown = yes
+		}
+		log = "OVERMIND: Player set Civilian economy"
+	}
+	overmind_player_enable_automation = yes
+}
+
+
+# --- COLONIZE: keep colony ships flowing ---
+overmind_player_action_colonize = {
+	overmind_clear_modifiers = yes
+	log = "OVERMIND: Player Action: COLONIZE for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_colonize_focus
+		days = 365
+	}
+	if = {
+		limit = { check_variable = { which = overmind_subaction value = 1 } }
+		set_country_flag = overmind_colonize_habitats
+	}
+	else_if = {
+		limit = { check_variable = { which = overmind_subaction value = 2 } }
+		set_country_flag = overmind_colonize_gaia
+	}
+	set_variable = { which = overmind_subaction value = 0 }
+}
+
+
+# --- BUILD_STARBASE: starbase tempo ---
+overmind_player_action_build_starbase = {
+	overmind_clear_modifiers = yes
+	log = "OVERMIND: Player Action: BUILD_STARBASE for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_starbase_focus
+		days = 365
+	}
+}
+
+
+# --- ESPIONAGE: build networks, run operations ---
+overmind_player_action_espionage = {
+	overmind_clear_modifiers = yes
+	log = "OVERMIND: Player Action: ESPIONAGE for [This.GetName]"
+	add_modifier = {
+		modifier = overmind_espionage_focus
+		days = 365
+	}
+}

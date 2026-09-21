@@ -1,0 +1,108 @@
+# ============================================================
+# Stellaris Overmind — Lex Application（法案装载器）
+#
+# 本文件由 engine/strategy_lex.py 自动生成，请勿手改。
+#
+# rev = 7    source = llm    year = 2200
+# focus = expansion and fleet building Expand territory and build a defensive fleet to secure new colonies.
+# agenda = 2 1 6 3 4 5 7 8
+#
+# 相位编码 1=救济 2=住房 3=就业 4=民生 5=科研 6=军备 7=传统飞升 8=战争
+# 生成器的取值域是封闭的（只有整数编码），因此这个文件必然是
+# 合法的 Clausewitz 脚本——不存在"大模型写出语法错误脚本"的风险。
+# ============================================================
+
+overmind_lex_apply = {
+
+	# --- 版本号（必须与 overmind_lex_vars.txt 一致） ---
+	set_variable = { which = om_lex_rev value = 7 }
+
+	# --- 月度日程表 ---
+	set_variable = { which = om_lex_slot1 value = 2 }
+	set_variable = { which = om_lex_slot2 value = 1 }
+	set_variable = { which = om_lex_slot3 value = 6 }
+	set_variable = { which = om_lex_slot4 value = 3 }
+	set_variable = { which = om_lex_slot5 value = 4 }
+	set_variable = { which = om_lex_slot6 value = 5 }
+	set_variable = { which = om_lex_slot7 value = 7 }
+	set_variable = { which = om_lex_slot8 value = 8 }
+
+	# --- 战略旋钮 ---
+	set_variable = { which = om_lex_threat value = 1 }
+	set_variable = { which = om_lex_bottleneck value = 1 }
+	set_variable = { which = om_lex_stance value = 3 }
+	set_variable = { which = om_lex_focus_zone value = 1 }
+	set_variable = { which = om_lex_tradition_mode value = 3 }
+	set_variable = { which = om_lex_ap_mode value = 3 }
+	set_variable = { which = om_lex_bombardment value = 2 }
+
+	overmind_lex_rules_apply = yes
+	set_variable = { which = om_lex_rule_count value = 12 }
+	set_variable = { which = om_lex_gain_p1 value = 0 }
+	set_variable = { which = om_lex_gain_p1_streak value = 0 }
+	set_variable = { which = om_lex_gain_p2 value = 0 }
+	set_variable = { which = om_lex_gain_p2_streak value = 0 }
+	set_variable = { which = om_lex_gain_p3 value = 0 }
+	set_variable = { which = om_lex_gain_p3_streak value = 0 }
+	set_variable = { which = om_lex_gain_p4 value = 0 }
+	set_variable = { which = om_lex_gain_p4_streak value = 0 }
+	set_variable = { which = om_lex_gain_p5 value = 0 }
+	set_variable = { which = om_lex_gain_p5_streak value = 0 }
+	set_variable = { which = om_lex_gain_p6 value = 0 }
+	set_variable = { which = om_lex_gain_p6_streak value = 0 }
+	set_variable = { which = om_lex_gain_p7 value = 0 }
+	set_variable = { which = om_lex_gain_p7_streak value = 0 }
+	set_variable = { which = om_lex_gain_p8 value = 0 }
+	set_variable = { which = om_lex_gain_p8_streak value = 0 }
+	set_variable = { which = om_parallel_max value = 3 }
+	set_variable = { which = om_rule_1_cond value = 5 }
+	set_variable = { which = om_rule_1_cond2 value = 0 }
+	set_variable = { which = om_rule_1_op value = 0 }
+	set_variable = { which = om_rule_1_act value = 8 }
+	set_variable = { which = om_rule_2_cond value = 6 }
+	set_variable = { which = om_rule_2_cond2 value = 5 }
+	set_variable = { which = om_rule_2_op value = 2 }
+	set_variable = { which = om_rule_2_act value = 6 }
+	set_variable = { which = om_rule_3_cond value = 1 }
+	set_variable = { which = om_rule_3_cond2 value = 2 }
+	set_variable = { which = om_rule_3_op value = 2 }
+	set_variable = { which = om_rule_3_act value = 1 }
+	set_variable = { which = om_rule_4_cond value = 3 }
+	set_variable = { which = om_rule_4_cond2 value = 4 }
+	set_variable = { which = om_rule_4_op value = 2 }
+	set_variable = { which = om_rule_4_act value = 1 }
+	set_variable = { which = om_rule_5_cond value = 7 }
+	set_variable = { which = om_rule_5_cond2 value = 0 }
+	set_variable = { which = om_rule_5_op value = 0 }
+	set_variable = { which = om_rule_5_act value = 1 }
+	set_variable = { which = om_rule_6_cond value = 8 }
+	set_variable = { which = om_rule_6_cond2 value = 0 }
+	set_variable = { which = om_rule_6_op value = 0 }
+	set_variable = { which = om_rule_6_act value = 2 }
+	set_variable = { which = om_rule_7_cond value = 9 }
+	set_variable = { which = om_rule_7_cond2 value = 0 }
+	set_variable = { which = om_rule_7_op value = 0 }
+	set_variable = { which = om_rule_7_act value = 4 }
+	set_variable = { which = om_rule_8_cond value = 11 }
+	set_variable = { which = om_rule_8_cond2 value = 0 }
+	set_variable = { which = om_rule_8_op value = 0 }
+	set_variable = { which = om_rule_8_act value = 2 }
+	set_variable = { which = om_rule_9_cond value = 11 }
+	set_variable = { which = om_rule_9_cond2 value = 12 }
+	set_variable = { which = om_rule_9_op value = 2 }
+	set_variable = { which = om_rule_9_act value = 3 }
+	set_variable = { which = om_rule_10_cond value = 12 }
+	set_variable = { which = om_rule_10_cond2 value = 13 }
+	set_variable = { which = om_rule_10_op value = 2 }
+	set_variable = { which = om_rule_10_act value = 5 }
+	set_variable = { which = om_rule_11_cond value = 13 }
+	set_variable = { which = om_rule_11_cond2 value = 14 }
+	set_variable = { which = om_rule_11_op value = 2 }
+	set_variable = { which = om_rule_11_act value = 7 }
+	set_variable = { which = om_rule_12_cond value = 99 }
+	set_variable = { which = om_rule_12_cond2 value = 0 }
+	set_variable = { which = om_rule_12_op value = 0 }
+	set_variable = { which = om_rule_12_act value = 5 }
+
+	log = "OVERMIND: lex applied rev 7 agenda 21634578 stance aggressive zone zone_industrial tr war ap war bomb indiscriminate"
+}

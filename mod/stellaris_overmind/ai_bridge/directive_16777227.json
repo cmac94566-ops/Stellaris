@@ -1,0 +1,8 @@
+{
+  "action": "COLONIZE",
+  "country_id": 16777227,
+  "parameters": {},
+  "reason": "Given the empire's current state with low colony count and the minerals_first focus, colonizing INF3_PLANET_Chuhhabog aligns with the game phase and empire's strategy. This action will help in resource gathering and expansion, which is crucial in the early game. Additionally, the empire's government and ethics favor expansion and militarism, making colonization a priority.",
+  "target": "INF3_PLANET_Chuhhabog",
+  "timestamp": "2201.1"
+}

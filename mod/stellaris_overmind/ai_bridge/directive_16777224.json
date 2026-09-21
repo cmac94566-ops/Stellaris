@@ -1,0 +1,8 @@
+{
+  "action": "IMPROVE_ECONOMY",
+  "country_id": 16777224,
+  "parameters": {},
+  "reason": "Early economy ramp (fast path)",
+  "target": null,
+  "timestamp": "2201.1"
+}

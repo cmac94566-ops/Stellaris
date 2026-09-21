@@ -1,0 +1,29 @@
+# 已退役控制台通道的实验产物（_legacy/ 除外，那是归档）
+/_*.png
+/_*.py
+/_*.txt
+/_backup/
+*.bak
+__pycache__/
+*.pyc
+# 运行时产物与本地配置（可能含密钥，不入库）
+config.toml
+overmind.log
+directive_*.json
+stellaris_overmind.egg-info/
+training/
+
+# 智能体操作日志（内容体不入库，脚本与窗口入库）
+logs/
+mod/stellaris_overmind/overmind_lex_record.json
+/f3_capture.log
+
+# 信箱 inbox —— 瞬时状态，**不入库**（2026-09-18 机制完善）
+# 依据：近 60 次提交里信箱文件占 45 次（inbox_zcode 24 / inbox_workbuddy 15 / archive 6）
+# ⇒ 消息的价值在「被读到」，不在「被版本控制」；走 git 只会制造噪音与提交冲突。
+# archive_*.md（已读归档）**仍留在库** —— 它是 append-only 的历史资产。
+HANDOFF/inbox_zcode.md
+HANDOFF/inbox_workbuddy.md
+
+# 记忆日志按作者分文件（避免双方共写同一文件）
+.workbuddy/memory/*.zcode.md

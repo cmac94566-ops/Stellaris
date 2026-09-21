@@ -1,0 +1,11 @@
+# ============================================================
+# Stellaris Overmind — Lex（帝国法案）运行期变量
+#
+# 本文件由 engine/strategy_lex.py 自动生成，请勿手改。
+# rev = 7
+# source = llm
+# year = 2200
+# focus = expansion and fleet building Expand territory and build a defensive fleet to secure new colonies.
+# ============================================================
+
+@om_lex_rev = 7

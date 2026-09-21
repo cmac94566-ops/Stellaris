@@ -1,0 +1,5306 @@
+# ============================================================
+# Stellaris Overmind — Autonomy Executor（游戏内自治执行层）
+#
+# 这是"手"。大模型写下的法案（overmind_lex.txt）是"法律"，
+# 本文件是执法机关：每个月检查帝国状态，按法案日程表动手。
+#
+# 为什么必须放在游戏内：
+#   Clausewitz 引擎不接受任何外部输入——它读不了磁盘文件，
+#   也没有远程接口（已在 stellaris.exe 中确证）。游戏唯一愿意
+#   读外部世界的时刻，是加载脚本的时候。所以外部大模型的决策
+#   只能"编译进脚本"，之后由脚本在游戏内部持续执行。
+#
+# 八个相位（1-8），每月跑一个，六--八格轮转：
+#   1 RELIEF     救济（补真正赤字的资源）
+#   2 HOUSING    住房（城区）
+#   3 JOBS       就业（乡村区划 + 专业区 zone）
+#   4 AMENITIES  民生（舒适度建筑）
+#   5 SCIENCE    科研与行政
+#   6 MILITARY   军备（补船 + 政策）
+#   7 ASCENSION  传统与飞升（树采纳 / 节点推进 / 飞升天赋）
+#   8 WAR        战争与防御（轰炸姿态 / 陆军 / 星港）
+#
+# 费用模型（重要）：
+#   add_district / add_zone / add_building / create_army /
+#   create_starbase 都是**即时**生效、绕过建造队列的效果，游戏
+#   不会收钱。所以每次建造都由本文件主动从国库扣费，扣多少钱
+#   来自 overmind_charges.txt（由 engine/costs.py 从游戏自带数据
+#   生成，即游戏自己的造价）。扣费前先用同源的 afford 触发器问
+#   一次"付得起吗"——因为 add_resource 扣到 0 就夹住，不检查就
+#   会凭空长出东西。传统同样按游戏 defines 的价格公式分档付费。
+#
+# 命名约定：所有新增键一律 overmind_ / om_ 开头（NFR-04）。
+# 一切 ID、trigger、effect 名字都经过 engine/script_audit.py 对
+# 游戏数据核验，名字写错会直接让测试失败，而不是静默失效。
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 通用建造助手（三件套：afford → charge → build）
+#   参数：TYPE/ZONE/BUILDING = 游戏 ID
+#         AFFORD/CHARGE     = 生成文件里的同源触发器和扣费效果
+# ------------------------------------------------------------
+# overmind_autonomy_do_district（已内联到各相位，避免多出一层嵌套 ——
+# 引擎上限 5 层，拆成独立 effect 会顶到上限导致后续初始化被放弃）
+
+
+# zone 不指定 zone_slot：官方脚本 151 次调用里有 69 次如此，
+# 由引擎自己挑一个空槽位——比我们硬编码槽位索引安全得多。
+# limit 里的 num_zones 保证同一颗行星不会重复建同一种专业区。
+# overmind_autonomy_do_zone（已内联到各相位，避免多出一层嵌套 ——
+# 引擎上限 5 层，拆成独立 effect 会顶到上限导致后续初始化被放弃）
+
+
+# overmind_autonomy_do_building（已内联到各相位，避免多出一层嵌套 ——
+# 引擎上限 5 层，拆成独立 effect 会顶到上限导致后续初始化被放弃）
+
+
+
+# ------------------------------------------------------------
+# 相位 1 — RELIEF：补上真正在赤字的资源
+# ------------------------------------------------------------
+overmind_autonomy_phase_relief = {
+
+	# D-7 入口日志：证明「本月轮到了本相位」。
+	# 与下面那些「动作成功才写」的日志配合，即可区分两种沉默：
+	#   有本行、无动作行 → 轮到了但条件不满足（通常是钱不够）
+	#   两行都没有        → 压根没轮到（日程问题）
+	log = "OVERMIND: 【相位 1/8】 RELIEF — 补真正在赤字的资源"
+	# D-41：入口清共旗 —— 自报只反映本相位动作（入口清共旗，非 per-phase 旗标）
+	remove_country_flag = om_did_build
+
+	# 法案指定的首要缺口优先
+	if = {
+		limit = {
+			check_variable = { which = om_lex_bottleneck value = 1 }
+			overmind_autonomy_deficit_energy = yes
+		}
+		random_owned_planet = {
+			limit = {
+				NOT = { owner = { resource_stockpile_percent = { resource = energy value >= 0.9 } } }  # S-19 满仓抑制
+				num_free_districts = {
+					type = district_generator
+					value >= 1
+				}
+				owner = { overmind_afford_district_district_generator = yes }
+			}
+			owner = {
+				overmind_charge_district_district_generator = yes
+				set_country_flag = om_did_build
+			}
+			add_district = {
+				district_type = district_generator
+			}
+			log = "OVERMIND: 建了发电区划（district_generator）于 [This.GetName]"
+		}
+	}
+	else_if = {
+		limit = {
+			check_variable = { which = om_lex_bottleneck value = 2 }
+			overmind_autonomy_deficit_minerals = yes
+		}
+		random_owned_planet = {
+			limit = {
+				num_free_districts = {
+					type = district_mining
+					value >= 1
+				}
+				owner = { overmind_afford_district_district_mining = yes }
+			}
+			owner = {
+				overmind_charge_district_district_mining = yes
+				set_country_flag = om_did_build
+			}
+			add_district = {
+				district_type = district_mining
+			}
+			log = "OVERMIND: 建了采矿区划（district_mining）于 [This.GetName]"
+		}
+	}
+	else_if = {
+		limit = {
+			check_variable = { which = om_lex_bottleneck value = 3 }
+			overmind_autonomy_deficit_food = yes
+		}
+		random_owned_planet = {
+			limit = {
+				NOT = { owner = { resource_stockpile_percent = { resource = food value >= 0.9 } } }  # S-19 满仓抑制
+				num_free_districts = {
+					type = district_farming
+					value >= 1
+				}
+				owner = { overmind_afford_district_district_farming = yes }
+			}
+			owner = {
+				overmind_charge_district_district_farming = yes
+				set_country_flag = om_did_build
+			}
+			add_district = {
+				district_type = district_farming
+			}
+			log = "OVERMIND: 建了农业区划（district_farming）于 [This.GetName]"
+		}
+	}
+
+	# 兜底：不管法案怎么写，真赤字就得治（能源 → 矿物 → 粮食）
+	if = {
+		limit = {
+			NOT = { has_country_flag = om_did_build }
+			overmind_autonomy_deficit_energy = yes
+		}
+		random_owned_planet = {
+			limit = {
+				NOT = { owner = { resource_stockpile_percent = { resource = energy value >= 0.9 } } }  # S-19 满仓抑制
+				num_free_districts = {
+					type = district_generator
+					value >= 1
+				}
+				owner = { overmind_afford_district_district_generator = yes }
+			}
+			owner = {
+				overmind_charge_district_district_generator = yes
+				set_country_flag = om_did_build
+			}
+			add_district = {
+				district_type = district_generator
+			}
+			log = "OVERMIND: 建了发电区划（district_generator）于 [This.GetName]"
+		}
+	}
+	if = {
+		limit = {
+			NOT = { has_country_flag = om_did_build }
+			overmind_autonomy_deficit_minerals = yes
+		}
+		random_owned_planet = {
+			limit = {
+				num_free_districts = {
+					type = district_mining
+					value >= 1
+				}
+				owner = { overmind_afford_district_district_mining = yes }
+			}
+			owner = {
+				overmind_charge_district_district_mining = yes
+				set_country_flag = om_did_build
+			}
+			add_district = {
+				district_type = district_mining
+			}
+			log = "OVERMIND: 建了采矿区划（district_mining）于 [This.GetName]"
+		}
+	}
+	if = {
+		limit = {
+			NOT = { has_country_flag = om_did_build }
+			overmind_autonomy_deficit_food = yes
+		}
+		random_owned_planet = {
+			limit = {
+				NOT = { owner = { resource_stockpile_percent = { resource = food value >= 0.9 } } }  # S-19 满仓抑制
+				num_free_districts = {
+					type = district_farming
+					value >= 1
+				}
+				owner = { overmind_afford_district_district_farming = yes }
+			}
+			owner = {
+				overmind_charge_district_district_farming = yes
+				set_country_flag = om_did_build
+			}
+			add_district = {
+				district_type = district_farming
+			}
+			log = "OVERMIND: 建了农业区划（district_farming）于 [This.GetName]"
+		}
+	}
+	# A3 收益自报（动作落地旗标直拷；轮转模式同样记账，无碍）
+	# D-41 修法（2026-09-19）：value = <旗标> 按未定义变量读 0（引擎文档：
+	# value 仅接受 float/variable/scope.variable/trigger:）—— 增益恒 0 = 熔断单向锁死。
+	if = {
+		limit = { has_country_flag = om_did_build }
+		set_variable = { which = om_lex_gain_p1 value = 1 }
+	}
+	else = {
+		set_variable = { which = om_lex_gain_p1 value = 0 }
+	}
+}
+
+
+# ------------------------------------------------------------
+# 相位 2 — HOUSING：住房
+# ------------------------------------------------------------
+overmind_autonomy_phase_housing = {
+
+	# D-7 入口日志：证明「本月轮到了本相位」。
+	# 与下面那些「动作成功才写」的日志配合，即可区分两种沉默：
+	#   有本行、无动作行 → 轮到了但条件不满足（通常是钱不够）
+	#   两行都没有        → 压根没轮到（日程问题）
+	log = "OVERMIND: 【相位 2/8】 HOUSING — 住房"
+	# D-41：入口清共旗 —— 自报只反映本相位动作（入口清共旗，非 per-phase 旗标）
+	remove_country_flag = om_did_build
+	if = {
+		limit = {
+			NOT = { has_country_flag = om_did_build }
+			any_owned_planet = { overmind_autonomy_needs_housing = yes }
+		}
+		random_owned_planet = {
+			limit = {
+				num_free_districts = {
+					type = district_city
+					value >= 1
+				}
+				owner = { overmind_afford_district_district_city = yes }
+			}
+			owner = {
+				overmind_charge_district_district_city = yes
+				set_country_flag = om_did_build
+			}
+			add_district = {
+				district_type = district_city
+			}
+			log = "OVERMIND: 建了城市区划（district_city）于 [This.GetName]"
+		}
+	}
+	# A3 收益自报（动作落地旗标直拷；轮转模式同样记账，无碍）
+	# D-41 修法（2026-09-19）：value = <旗标> 按未定义变量读 0（引擎文档：
+	# value 仅接受 float/variable/scope.variable/trigger:）—— 增益恒 0 = 熔断单向锁死。
+	if = {
+		limit = { has_country_flag = om_did_build }
+		set_variable = { which = om_lex_gain_p2 value = 1 }
+	}
+	else = {
+		set_variable = { which = om_lex_gain_p2 value = 0 }
+	}
+}
+
+
+# ------------------------------------------------------------
+# 相位 3 — JOBS：就业与工业
+#
+# 分两步，因为 4.4.6 里"工作"有两个来源：
+#   a) 乡村区划（generator/mining/farming）直接提供岗位；
+#   b) 专业区 zone 提供专业化岗位，但只有城区有 zone 槽位。
+# 所以先保证有城区（槽位），再按法案方向铺专业区。
+# ------------------------------------------------------------
+overmind_autonomy_phase_jobs = {
+
+	# D-7 入口日志：证明「本月轮到了本相位」。
+	# 与下面那些「动作成功才写」的日志配合，即可区分两种沉默：
+	#   有本行、无动作行 → 轮到了但条件不满足（通常是钱不够）
+	#   两行都没有        → 压根没轮到（日程问题）
+	log = "OVERMIND: 【相位 3/8】 JOBS — 岗位与区划铺开"
+	# D-41：入口清共旗 —— 自报只反映本相位动作（入口清共旗，非 per-phase 旗标）
+	remove_country_flag = om_did_build
+
+	# a) 法案指定的主要缺口资源，补一个对应的乡村区划
+	if = {
+		limit = {
+			NOT = { has_country_flag = om_did_build }
+			check_variable = { which = om_lex_bottleneck value = 2 }
+			overmind_autonomy_deficit_minerals = yes
+		}
+		random_owned_planet = {
+			limit = {
+				num_free_districts = {
+					type = district_mining
+					value >= 1
+				}
+				owner = { overmind_afford_district_district_mining = yes }
+			}
+			owner = {
+				overmind_charge_district_district_mining = yes
+				set_country_flag = om_did_build
+			}
+			add_district = {
+				district_type = district_mining
+			}
+			log = "OVERMIND: 建了采矿区划（district_mining）于 [This.GetName]"
+		}
+	}
+
+	# a2) S-19 救火（裁定 §2）：矿物库存 <200（收入打平也救）→ 建采矿区划，
+	# 专用垫 100（破鸡生蛋；走统一花销门，能源收入门不豁免 P6）。
+	# 这是对 D-28「库存判据盲区」的直接消费。
+	if = {
+		limit = {
+			NOT = { has_country_flag = om_did_build }
+			overmind_autonomy_low_minerals = yes
+			overmind_afford_district_district_mining_relief = yes
+		}
+		random_owned_planet = {
+			limit = {
+				num_free_districts = {
+					type = district_mining
+					value >= 1
+				}
+				owner = { overmind_afford_district_district_mining_relief = yes }
+			}
+			owner = {
+				overmind_charge_district_district_mining = yes
+				set_country_flag = om_did_build
+			}
+			add_district = {
+				district_type = district_mining
+			}
+			log = "OVERMIND: 建了采矿区划（district_mining）于 [This.GetName] —— 矿物库存救火"
+		}
+	}
+
+	# b) 法案指定的专业区方向 → 一个 zone
+	# b0) 消费品赤字优先（D-28 家族 / 网络共识：民用工厂区是 CG 唯一大宗来源；
+	#     网络方案②Consumer Benefits 贸易政策已设，方案①民用工厂由此分支落地）。
+	#     触发 = has_deficit = consumer_goods（引擎在册触发器，triggers.log:780）。
+	#     zone_factory：城市区可用，价 1000 矿（@zone_cost），afford/charge 对已在册。
+	if = {
+		limit = {
+			NOT = { has_country_flag = om_did_build }
+			has_deficit = consumer_goods
+		}
+		random_owned_planet = {
+			limit = {
+				has_district = district_city
+				num_zones = {
+					type = zone_factory
+					value = 0
+				}
+				owner = { overmind_afford_zone_zone_factory = yes }
+			}
+			owner = {
+				overmind_charge_zone_zone_factory = yes
+				set_country_flag = om_did_build
+			}
+			add_zone = {
+				district = district_city
+				zone = zone_factory
+			}
+			log = "OVERMIND: 【消费品】建了民用工厂区（zone_factory）—— 赤字优先"
+		}
+	}
+	if = {
+		limit = { NOT = { has_country_flag = om_did_build } }
+		if = {
+			limit = { check_variable = { which = om_lex_focus_zone value = 1 } }
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = {
+						type = zone_industrial
+						value = 0
+					}
+					owner = { overmind_afford_zone_zone_industrial = yes }
+				}
+				owner = {
+					overmind_charge_zone_zone_industrial = yes
+					set_country_flag = om_did_build
+				}
+				add_zone = {
+					district = district_city
+					zone = zone_industrial
+				}
+				log = "OVERMIND: 建了工业区（zone_industrial）于 [This.GetName]"
+			}
+		}
+		else_if = {
+			limit = { check_variable = { which = om_lex_focus_zone value = 2 } }
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = {
+						type = zone_foundry
+						value = 0
+					}
+					owner = { overmind_afford_zone_zone_foundry = yes }
+				}
+				owner = {
+					overmind_charge_zone_zone_foundry = yes
+					set_country_flag = om_did_build
+				}
+				add_zone = {
+					district = district_city
+					zone = zone_foundry
+				}
+				log = "OVERMIND: 建了铸造区（zone_foundry）于 [This.GetName]"
+			}
+		}
+		else_if = {
+			limit = { check_variable = { which = om_lex_focus_zone value = 3 } }
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = {
+						type = zone_research
+						value = 0
+					}
+					owner = { overmind_afford_zone_zone_research = yes }
+				}
+				owner = {
+					overmind_charge_zone_zone_research = yes
+					set_country_flag = om_did_build
+				}
+				add_zone = {
+					district = district_city
+					zone = zone_research
+				}
+				log = "OVERMIND: 建了研究区（zone_research）于 [This.GetName]"
+			}
+		}
+		else_if = {
+			limit = { check_variable = { which = om_lex_focus_zone value = 4 } }
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = {
+						type = zone_trade
+						value = 0
+					}
+					owner = { overmind_afford_zone_zone_trade = yes }
+				}
+				owner = {
+					overmind_charge_zone_zone_trade = yes
+					set_country_flag = om_did_build
+				}
+				add_zone = {
+					district = district_city
+					zone = zone_trade
+				}
+				log = "OVERMIND: 建了贸易区（zone_trade）于 [This.GetName]"
+			}
+		}
+		else = {
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = {
+						type = zone_unity
+						value = 0
+					}
+					owner = { overmind_afford_zone_zone_unity = yes }
+				}
+				owner = {
+					overmind_charge_zone_zone_unity = yes
+					set_country_flag = om_did_build
+				}
+				add_zone = {
+					district = district_city
+					zone = zone_unity
+				}
+				log = "OVERMIND: 建了凝聚力区（zone_unity）于 [This.GetName]"
+			}
+		}
+	}
+
+	# c) 城区不够就补城区（给专业区腾槽位，也顺带加住房）
+	if = {
+		limit = {
+			NOT = { has_country_flag = om_did_build }
+			any_owned_planet = {
+				NOT = { has_district = district_city }
+				num_free_districts = { type = district_city value >= 1 }
+			}
+		}
+		random_owned_planet = {
+			limit = {
+				num_free_districts = {
+					type = district_city
+					value >= 1
+				}
+				owner = { overmind_afford_district_district_city = yes }
+			}
+			owner = {
+				overmind_charge_district_district_city = yes
+				set_country_flag = om_did_build
+			}
+			add_district = {
+				district_type = district_city
+			}
+			log = "OVERMIND: 建了城市区划（district_city）于 [This.GetName]"
+		}
+	}
+	# A3 收益自报（动作落地旗标直拷；轮转模式同样记账，无碍）
+	# D-41 修法（2026-09-19）：value = <旗标> 按未定义变量读 0（引擎文档：
+	# value 仅接受 float/variable/scope.variable/trigger:）—— 增益恒 0 = 熔断单向锁死。
+	if = {
+		limit = { has_country_flag = om_did_build }
+		set_variable = { which = om_lex_gain_p3 value = 1 }
+	}
+	else = {
+		set_variable = { which = om_lex_gain_p3 value = 0 }
+	}
+}
+
+
+# ------------------------------------------------------------
+# 相位 4 — AMENITIES：民生
+# ------------------------------------------------------------
+overmind_autonomy_phase_amenities = {
+
+	# D-7 入口日志：证明「本月轮到了本相位」。
+	# 与下面那些「动作成功才写」的日志配合，即可区分两种沉默：
+	#   有本行、无动作行 → 轮到了但条件不满足（通常是钱不够）
+	#   两行都没有        → 压根没轮到（日程问题）
+	log = "OVERMIND: 【相位 4/8】 AMENITIES — 民生与舒适度"
+	# D-41：入口清共旗 —— 自报只反映本相位动作（入口清共旗，非 per-phase 旗标）
+	remove_country_flag = om_did_build
+	if = {
+		limit = { NOT = { has_country_flag = om_did_build } }
+		if = {
+			limit = {
+				any_owned_planet = {
+					overmind_autonomy_needs_amenities = yes
+					overmind_autonomy_has_building_slot = yes
+				}
+			}
+			random_owned_planet = {
+				limit = {
+					free_building_slots > 0
+					owner = { overmind_afford_building_building_holo_theatres = yes }
+				}
+				owner = {
+					overmind_charge_building_building_holo_theatres = yes
+					set_country_flag = om_did_build
+				}
+				add_building = building_holo_theatres
+				log = "OVERMIND: 建了建筑全息剧场（building_holo_theatres）于 [This.GetName]"
+			}
+		}
+		else = {
+			random_owned_planet = {
+				limit = {
+					free_building_slots > 0
+					owner = { overmind_afford_building_building_luxury_residence = yes }
+				}
+				owner = {
+					overmind_charge_building_building_luxury_residence = yes
+					set_country_flag = om_did_build
+				}
+				add_building = building_luxury_residence
+				log = "OVERMIND: 建了建筑豪华住宅（building_luxury_residence）于 [This.GetName]"
+			}
+		}
+	}
+	# A3 收益自报（动作落地旗标直拷；轮转模式同样记账，无碍）
+	# D-41 修法（2026-09-19）：value = <旗标> 按未定义变量读 0（引擎文档：
+	# value 仅接受 float/variable/scope.variable/trigger:）—— 增益恒 0 = 熔断单向锁死。
+	if = {
+		limit = { has_country_flag = om_did_build }
+		set_variable = { which = om_lex_gain_p4 value = 1 }
+	}
+	else = {
+		set_variable = { which = om_lex_gain_p4 value = 0 }
+	}
+}
+
+
+# ------------------------------------------------------------
+# 相位 5 — SCIENCE：科研与行政
+# ------------------------------------------------------------
+overmind_autonomy_phase_science = {
+
+	# D-7 入口日志：证明「本月轮到了本相位」。
+	# 与下面那些「动作成功才写」的日志配合，即可区分两种沉默：
+	#   有本行、无动作行 → 轮到了但条件不满足（通常是钱不够）
+	#   两行都没有        → 压根没轮到（日程问题）
+	log = "OVERMIND: 【相位 5/8】 SCIENCE — 科研与行政"
+	# D-41：入口清共旗 —— 自报只反映本相位动作（入口清共旗，非 per-phase 旗标）
+	remove_country_flag = om_did_build
+	if = {
+		limit = { NOT = { has_country_flag = om_did_build } }
+		random_owned_planet = {
+			limit = {
+				free_building_slots > 0
+				owner = { overmind_afford_building_building_research_lab_1 = yes }
+			}
+			owner = {
+				overmind_charge_building_building_research_lab_1 = yes
+				set_country_flag = om_did_build
+			}
+			add_building = building_research_lab_1
+			log = "OVERMIND: 建了建筑一级研究实验室（building_research_lab_1）于 [This.GetName]"
+		}
+	}
+
+	# 经济政策：赤字转民用，否则均衡
+	if = {
+		limit = {
+			overmind_autonomy_deficit_energy = yes
+			can_set_policy = {
+				policy = economic_policy
+				option = economic_policy_civilian
+			}
+		}
+		set_policy = {
+			policy = economic_policy
+			option = economic_policy_civilian
+		}
+	}
+	else_if = {
+		limit = {
+			can_set_policy = {
+				policy = economic_policy
+				option = economic_policy_balanced
+			}
+		}
+		set_policy = {
+			policy = economic_policy
+			option = economic_policy_balanced
+		}
+	}
+	# A3 收益自报（动作落地旗标直拷；轮转模式同样记账，无碍）
+	# D-41 修法（2026-09-19）：value = <旗标> 按未定义变量读 0（引擎文档：
+	# value 仅接受 float/variable/scope.variable/trigger:）—— 增益恒 0 = 熔断单向锁死。
+	if = {
+		limit = { has_country_flag = om_did_build }
+		set_variable = { which = om_lex_gain_p5 value = 1 }
+	}
+	else = {
+		set_variable = { which = om_lex_gain_p5 value = 0 }
+	}
+}
+
+
+# ------------------------------------------------------------
+# 每月建舰（在 tick 层直接调用，**不经** run_slot / phase_military）
+# ------------------------------------------------------------
+# 放在这一层是为了保住引擎的 5 层嵌套预算：``create_military_fleet`` 自带
+# 一个 ``effect`` 容器，如果还留在 phase_military 里，链会是
+#     event.immediate(1) -> tick(2) -> run_slot(3) -> phase_military(4)
+#         -> create_military_fleet(5) -> effect(6)   = 6，超限。
+# 提到 tick 层后是 1-2-3-4，安全。详见 phase_military 顶部的说明。
+#
+# 用 ``create_military_fleet``（而非 ``create_fleet``）的理由：
+#   1. 语义精准 —— 建的就是军用舰队，不会像 ``every_owned_fleet`` 那样
+#      把军舰塞进民用编制（实机报「无法将民用舰船与其他舰船混合编制」）；
+#   2. ``owner`` 参数在块外给定，effect 块里只需 ``create_ship``，
+#      比 ``create_fleet`` 少写 set_owner / set_location。
+# 用法取自 exe 自带的 effect 文档表：
+#     create_military_fleet = { owner = <target> scaled_size = 1.0 effect = { } }
+overmind_autonomy_build_ship = {
+
+	# 建舰策略（2026-09-15 定稿，用户指令 + 玩家社区共识）：
+	#   ① 发展优先 —— 前 10 游戏年零扩军，先把科研/殖民地/经济铺开
+	#      （社区共识：前期合金是扩张命脉，舰队只求吓阻）；
+	#   ② 资源冗余 —— 能源月收入必须为正（舰队维护吃能源，赤字扩军
+	#      是社区公认的崩溃起点），合金安全垫 300（造完剩 200+）；
+	#   ③ 威胁例外 —— 法案判威胁 ≥3 时豁免①②（先有船，再谈攒钱），
+	#      合金门槛降回 50，但容量门与能源门不豁免；
+	#   ④ 容量门（D-20）—— used_naval_capacity_percent < 1.0，超容
+	#      维护惩罚重，缺省姿态不超容扩军（原版 ai_budget 同款触发器）。
+	if = {
+		limit = {
+			NOT = { has_country_flag = om_did_ship }
+			# S-2：容量门按年代查表（执行手册时代总表）——
+			#   era2 巩固期 30-60%、era3 专业化期 60-90%、era4+ 满容量。
+			#   era1 发展期无分支 → 不建舰；om_era 缺失（异常存档）时
+			#   所有分支都不成立 → 同样不建舰，安全兜底。
+			OR = {
+				AND = {
+					check_variable = { which = om_era value = 2 }
+					used_naval_capacity_percent < 0.6
+				}
+				AND = {
+					check_variable = { which = om_era value = 3 }
+					used_naval_capacity_percent < 0.9
+				}
+				AND = {
+					check_variable = { which = om_era value >= 4 }
+					used_naval_capacity_percent < 1.0
+				}
+			}
+			OR = {
+				years_passed >= 10
+				check_variable = { which = om_lex_threat value >= 3 }
+				is_at_war = yes
+			}
+			OR = {
+				# S-1：统一花销门 —— 合金安全垫 300（威胁 ≥3 时降到 50），
+				# 能源收入为正的门在触发器内部，任何分支都不豁免。
+				overmind_can_afford = { RESOURCE = alloys PAD = 300 }
+				AND = {
+					check_variable = { which = om_lex_threat value >= 3 }
+					overmind_can_afford = { RESOURCE = alloys PAD = 50 }
+				}
+			}
+		}
+		create_military_fleet = {
+			owner = root
+			scaled_size = 1.0
+			effect = {
+				set_location = root.capital_scope
+				create_ship = {
+					name = random
+					design = "NAME_AI_Core"
+				}
+			}
+		}
+		# 扣款与国家标记只做一次。原实现把它们写在 every_owned_fleet 内部，
+		# 于是「每多一个舰队就多扣 100 合金」—— 一个安静的记账错误。
+		set_country_flag = om_did_ship
+		add_resource = { alloys = -100 }
+		# R-2（三席评审红队#4）：om_did_ship 是月度标记，月初清零，
+		# 而年度自动存档只会落在 slot 4/8 —— 军事相位建舰的证据几乎必然
+		# 采样不到，fleet_size 于是成了唯一且无交叉验证的代理。
+		# 这个累计计数器是第二证据源：探针读它即可独立确证"真的建过舰"。
+		change_variable = { which = om_ships_built value = 1 }
+		log = "OVERMIND: 新建了一支军用舰队（1 艘 NAME_AI_Core），合金 -100"
+	}
+}
+
+
+# ------------------------------------------------------------
+# 相位 6 — MILITARY：军备
+# ------------------------------------------------------------
+overmind_autonomy_phase_military = {
+
+	# D-7 入口日志：证明「本月轮到了本相位」。
+	# 与下面那些「动作成功才写」的日志配合，即可区分两种沉默：
+	#   有本行、无动作行 → 轮到了但条件不满足（通常是钱不够）
+	#   两行都没有        → 压根没轮到（日程问题）
+	log = "OVERMIND: 【相位 6/8】 MILITARY — 军备姿态（建舰已提到 tick 层）"
+
+	# 建舰不在这里做 —— 见 ``overmind_autonomy_build_ship``，它在 tick 层直接调用。
+	#
+	# 为什么搬走（实机 bug，2026-09-15，第二批）
+	# ------------------------------------------
+	# 一是混编报错。原实现是 ``every_owned_fleet = { create_ship = ... }``，实机跑出：
+	#
+	#     Script Error, cannot add ship to fleet! Errors:
+	#       不允许创建的舰队中舰船使用的超光速旅行手段不同
+	#       无法将民用舰船与其他舰船混合编制
+	#     @ overmind_autonomy.txt:535 (overmind_autonomy_phase_military)
+	#
+	# ``every_owned_fleet`` 遍历**所有**舰队，``is_mobile = yes`` 对科研船、工程船、
+	# 殖民船同样成立，军舰于是被塞进民用舰队。负面结果几乎察觉不到（只是没多出船），
+	# 只有真跑起来、并且真去翻 game.log/error.log 才能发现。
+	#
+	# 二是深度。改用 ``create_military_fleet``（exe 文档表原文：
+	# ``Creates a military fleet with the designs of a specified country.`` /
+	# ``create_military_fleet = { owner = <target> scaled_size = 1.0 effect = { } }``）
+	# 之后，它**带 effect 块**，于是链变成
+	#
+	#     event.immediate(1) -> tick(2) -> run_slot(3) -> phase_military(4)
+	#         -> create_military_fleet(5) -> effect(6)          = 6，超限
+	#
+	# 这正是本项目第三次撞同一堵墙（前两次是 tradition 链和 do_* 中间层）。
+	# 前两次的解法都是「砍掉一个派发层」；这次因为只有建舰这一段需要 effect 容器，
+	# 索性把它**提到 tick 层**直接执行 —— 链变成
+	#
+	#     event.immediate(1) -> tick(2) -> create_military_fleet(3) -> effect(4)  ✓
+	#
+	# 语义上也更顺：建舰本来就是「每月看合金够不够」，而不该挂在 8 槽轮转上
+	# 等到轮到 MILITARY 那一格才做。
+
+	# 战争哲学按法案的风险偏好走
+	if = {
+		limit = {
+			check_variable = { which = om_lex_stance value = 3 }
+			can_set_policy = {
+				policy = war_philosophy
+				option = unrestricted_wars
+			}
+		}
+		set_policy = {
+			policy = war_philosophy
+			option = unrestricted_wars
+		}
+	}
+	else_if = {
+		limit = {
+			check_variable = { which = om_lex_stance value = 1 }
+			can_set_policy = {
+				policy = war_philosophy
+				option = liberation_wars
+			}
+		}
+		set_policy = {
+			policy = war_philosophy
+			option = liberation_wars
+		}
+	}
+	# A3 收益自报（动作落地旗标直拷；轮转模式同样记账，无碍）
+	# D-41 修法（2026-09-19）：value = <旗标> 按未定义变量读 0（引擎文档：
+	# value 仅接受 float/variable/scope.variable/trigger:）—— 增益恒 0 = 熔断单向锁死。
+	if = {
+		limit = { has_country_flag = om_did_ship }
+		set_variable = { which = om_lex_gain_p6 value = 1 }
+	}
+	else = {
+		set_variable = { which = om_lex_gain_p6 value = 0 }
+	}
+}
+
+
+# ------------------------------------------------------------
+# S-6 · 传统树年代查表（执行手册 §传统树优先级）
+#
+# 替换生成链的「法案模式取用」：树序不再由 om_lex_tradition_mode 决定，
+# 而是按 om_era 查表 —— era1 只烧手册开局三树（繁荣→扩张→发现），
+# era2 分支（和谐/商贸/灵活）与 era3+ 分支（至霸/支配）一律带年代门，
+# 防止发展期把凝聚力烧在军事树上（P1 发展优先）。
+# 树 ID 全部复用生成链里已审计的 tr_*_adopt（零新名字）。
+# 生成文件 overmind_progression.txt 不动，旧模式链保留仅不再被相位调用。
+# ------------------------------------------------------------
+overmind_advance_tradition_by_era = {
+	if = {
+		limit = { NOT = { has_tradition = tr_prosperity_adopt } }
+		add_tradition = tr_prosperity_adopt
+		log = "OVERMIND: 采纳传统树 prosperity（era1 开局三树之一）"
+	}
+	else_if = {
+		limit = { NOT = { has_tradition = tr_expansion_adopt } }
+		add_tradition = tr_expansion_adopt
+		log = "OVERMIND: 采纳传统树 expansion（era1 开局三树之二）"
+	}
+	else_if = {
+		limit = { NOT = { has_tradition = tr_discovery_adopt } }
+		add_tradition = tr_discovery_adopt
+		log = "OVERMIND: 采纳传统树 discovery（era1 开局三树之三）"
+	}
+	else_if = {
+		limit = {
+			NOT = { has_tradition = tr_harmony_adopt }
+			check_variable = { which = om_era value >= 2 }
+		}
+		add_tradition = tr_harmony_adopt
+		log = "OVERMIND: 采纳传统树 harmony（era2 分支）"
+	}
+	else_if = {
+		limit = {
+			NOT = { has_tradition = tr_mercantile_adopt }
+			check_variable = { which = om_era value >= 2 }
+		}
+		add_tradition = tr_mercantile_adopt
+		log = "OVERMIND: 采纳传统树 mercantile（era2 分支）"
+	}
+	else_if = {
+		limit = {
+			NOT = { has_tradition = tr_adaptability_adopt }
+			check_variable = { which = om_era value >= 2 }
+		}
+		add_tradition = tr_adaptability_adopt
+		log = "OVERMIND: 采纳传统树 adaptability（era2 分支）"
+	}
+	else_if = {
+		limit = {
+			NOT = { has_tradition = tr_supremacy_adopt }
+			check_variable = { which = om_era value >= 3 }
+		}
+		add_tradition = tr_supremacy_adopt
+		log = "OVERMIND: 采纳传统树 supremacy（era3+ 分支）"
+	}
+	else_if = {
+		limit = {
+			NOT = { has_tradition = tr_domination_adopt }
+			check_variable = { which = om_era value >= 3 }
+		}
+		add_tradition = tr_domination_adopt
+		log = "OVERMIND: 采纳传统树 domination（era3+ 分支）"
+	}
+	else_if = {
+		limit = {
+			NOT = { has_tradition = tr_diplomacy_adopt }
+			check_variable = { which = om_era value >= 2 }
+		}
+		add_tradition = tr_diplomacy_adopt
+		log = "OVERMIND: 采纳传统树 diplomacy（终末兜底）"
+	}
+}
+
+
+# ------------------------------------------------------------
+# S-6 · 飞升天赋查表（执行手册 §资格闸门 + §选型决策树 + §天赋节点查表）
+#
+# 槽位表（num_ascension_perks 驱动）：
+#   槽 1  纯增益：科技飞升 → 一体化兜底（社区默认，无副作用）
+#   槽 2  过渡：高效官僚 → 帝国特权
+#   槽 3  路线选型：先闸后树（下方决策树），选中的路线写入 om_ap_route
+#   槽 4  星河奇迹（须巨构工程学科技）
+#   槽 5  era5 守护者（危机减伤终局共识）/ era4+ 军力投射
+#   槽 6+ 自然掌控填充（低门槛，引擎把关）
+#
+# 决策树（先闸后树；引擎 add_ascension_perk 是资格真把关 —— D-6 同款
+# 哲学：本层只做「什么时候值得尝试」的粗筛，筛得宽只是白试一次）：
+#   ① 机械智能+驱逐同化器 → 义体（本池唯一机械专属：ap_organo_..._assimilator）
+#   ② 普通机械智能 → 本池无机械路线，授普通天赋推进槽位（不空转）
+#   ③ Augmentation Bazaars 民议 → 义体专厅（手册民议闸）
+#   ④ 灵能：唯心或已有灵能理论；era3（30 年）起理论仍不可见 → 换线剔除
+#   ⑤ 合成：唯物/机械学家起源/合成领袖科技；政策闸 blocks_ai_synthetic_evolution
+#     （= vanilla 同款：AI/机器人政策被禁及冲突起源 → 禁选）+ era3 换线
+#   ⑥ 生物：有机保底（蜂巢同走此支）
+#   ⑦ 蜂巢义体：生物不可用时防御性备选
+#   ⑧ 都不合格（如自然设计）→ 只授普通天赋（手册决策树步骤 0）
+# 换线写法 = NOT(years>=30 且关键科技不可见)：30 年前不卡 RNG 抽取，
+# 30 年后果断换线，不为一条路线空等到战力真空（社区致命误区）。
+# 危机天赋（become_the_crisis / cosmogenesis）绝不进本表 —— 属用户级决策。
+# 池参照：本安装 common/ascension_perks/ 实测 49 个（42 通用 + 7 路线）；
+# 路线二级天赋（进化精通/超越等）不在 4.4.6 池中，由路线传统树承载，v1 跳过。
+# ------------------------------------------------------------
+overmind_pick_ascension_perk = {
+	# --- 槽 1：纯增益 ---
+	if = {
+		limit = {
+			num_ascension_perks <= 0
+			NOT = { has_ascension_perk = ap_technological_ascendancy }
+		}
+		add_ascension_perk = ap_technological_ascendancy
+		log = "OVERMIND: 授予飞升天赋 ap_technological_ascendancy（槽1 纯增益）"
+	}
+	else_if = {
+		limit = { num_ascension_perks <= 0 }
+		add_ascension_perk = ap_one_vision
+		log = "OVERMIND: 授予飞升天赋 ap_one_vision（槽1 纯增益兜底）"
+	}
+	# --- 槽 2：过渡增益 ---
+	else_if = {
+		limit = {
+			num_ascension_perks <= 1
+			NOT = { has_ascension_perk = ap_executive_vigor }
+		}
+		add_ascension_perk = ap_executive_vigor
+		log = "OVERMIND: 授予飞升天赋 ap_executive_vigor（槽2 过渡）"
+	}
+	else_if = {
+		limit = { num_ascension_perks <= 1 }
+		add_ascension_perk = ap_imperial_prerogative
+		log = "OVERMIND: 授予飞升天赋 ap_imperial_prerogative（槽2 过渡兜底）"
+	}
+	# --- 槽 3：路线选型（先闸后树） ---
+	else_if = {
+		limit = { num_ascension_perks <= 2 }
+		if = {
+			limit = {
+				is_machine_empire = yes
+				has_valid_civic = civic_machine_assimilator
+			}
+			set_variable = { which = om_ap_route value = 5 }
+			add_ascension_perk = ap_organo_machine_interfacing_assimilator
+			log = "OVERMIND: 【飞升路线】 机械义体（驱逐同化器专属）"
+		}
+		else_if = {
+			limit = { is_machine_empire = yes }
+			add_ascension_perk = ap_transcendent_learning
+			log = "OVERMIND: 【飞升路线】 机械智能无专属路线池，仅授普通天赋"
+		}
+		else_if = {
+			limit = {
+				is_machine_empire = no
+				is_natural_design_empire = no
+				has_valid_civic = civic_augmentation_bazaars
+			}
+			set_variable = { which = om_ap_route value = 4 }
+			add_ascension_perk = ap_the_flesh_is_weak
+			log = "OVERMIND: 【飞升路线】 义体（Augmentation Bazaars 民议专厅）"
+		}
+		else_if = {
+			limit = {
+				is_machine_empire = no
+				is_hive_empire = no
+				is_natural_design_empire = no
+				OR = {
+					is_spiritualist = yes
+					has_technology = tech_psionic_theory
+				}
+				NOT = {
+					AND = {
+						years_passed >= 30
+						NOT = { has_technology = tech_psionic_theory }
+					}
+				}
+			}
+			set_variable = { which = om_ap_route value = 2 }
+			add_ascension_perk = ap_mind_over_matter
+			log = "OVERMIND: 【飞升路线】 灵能（唯心/灵能理论候选合格）"
+		}
+		else_if = {
+			limit = {
+				is_machine_empire = no
+				is_hive_empire = no
+				is_natural_design_empire = no
+				blocks_ai_synthetic_evolution = no
+				NOT = { has_policy_flag = ai_outlawed }
+				NOT = { has_policy_flag = robots_outlawed }
+				OR = {
+					is_materialist = yes
+					has_origin = origin_mechanists
+					has_technology = tech_synthetic_leaders
+				}
+				NOT = {
+					AND = {
+						years_passed >= 30
+						NOT = { has_technology = tech_synthetic_leaders }
+					}
+				}
+			}
+			set_variable = { which = om_ap_route value = 3 }
+			add_ascension_perk = ap_synthetic_evolution
+			log = "OVERMIND: 【飞升路线】 合成进化（唯物/机械学家候选合格，政策闸已过）"
+		}
+		else_if = {
+			limit = {
+				is_machine_empire = no
+				is_natural_design_empire = no
+			}
+			set_variable = { which = om_ap_route value = 1 }
+			add_ascension_perk = ap_engineered_evolution
+			log = "OVERMIND: 【飞升路线】 生物基因（有机保底路线）"
+		}
+		else_if = {
+			limit = { is_hive_empire = yes }
+			set_variable = { which = om_ap_route value = 6 }
+			add_ascension_perk = ap_organo_machine_interfacing
+			log = "OVERMIND: 【飞升路线】 蜂巢义体（生物不可用时的备选）"
+		}
+		else = {
+			add_ascension_perk = ap_transcendent_learning
+			log = "OVERMIND: 【飞升路线】 无合格路线资格（自然设计等），仅授普通天赋"
+		}
+	}
+	# --- 槽 4：星河奇迹（巨构工程学科技门） ---
+	else_if = {
+		limit = {
+			num_ascension_perks <= 3
+			has_technology = tech_mega_engineering
+			NOT = { has_ascension_perk = ap_galactic_wonders }
+		}
+		add_ascension_perk = ap_galactic_wonders
+		log = "OVERMIND: 授予飞升天赋 ap_galactic_wonders（槽4 巨构滚雪球）"
+	}
+	# --- 槽 5：年代查表（era5 守护者 → era4+ 军力投射） ---
+	else_if = {
+		limit = {
+			num_ascension_perks <= 4
+			check_variable = { which = om_era value >= 5 }
+		}
+		add_ascension_perk = ap_defender_of_the_galaxy
+		log = "OVERMIND: 授予飞升天赋 ap_defender_of_the_galaxy（era5 危机减伤）"
+	}
+	else_if = {
+		limit = {
+			num_ascension_perks <= 4
+			check_variable = { which = om_era value >= 4 }
+		}
+		add_ascension_perk = ap_galactic_force_projection
+		log = "OVERMIND: 授予飞升天赋 ap_galactic_force_projection（era4+ 军力）"
+	}
+	# --- 槽 6+：低门槛经济填充（引擎把关资格；64 上界与相位粗筛一致） ---
+	else_if = {
+		limit = {
+			num_ascension_perks < 64
+			NOT = { has_ascension_perk = ap_mastery_of_nature }
+		}
+		add_ascension_perk = ap_mastery_of_nature
+		log = "OVERMIND: 授予飞升天赋 ap_mastery_of_nature（槽6+ 经济填充）"
+	}
+}
+
+
+# ------------------------------------------------------------
+# 相位 7 — ASCENSION：传统与飞升
+#
+# 三步（S-6 起：树序按 om_era 查表、天赋按四道闸+决策树查表）：
+#   a) 还有空树位 → 按年代查表采纳下一棵树（overmind_advance_tradition_by_era）
+#   b) 否则 → 在已采纳的树里推进一个节点（生成链 overmind_advance_tradition_node）
+#   c) 飞升槽位空闲 → 按槽位表+决策树授予（overmind_pick_ascension_perk）
+# 传统按游戏 defines 的价格公式付费（见 overmind_charge_tradition）。
+# 生成文件 overmind_progression.txt 保留旧模式链（契约测试锁定其存在），
+# 仅不再被本相位调用。
+# ------------------------------------------------------------
+
+	# P0-B（WDMSG-078）：相位 7 判定自报 —— 区分「afford 假」「树位满」「熔断挡」。
+	# 只加日志，不改判据（078 明令禁止调门槛凑达标）。
+overmind_autonomy_tradition_report = {
+	if = {
+		limit = { overmind_afford_tradition = yes }
+		log = "OVERMIND: 【传统】判定：凝聚力已足额，可采纳"
+	}
+	else = {
+		log = "OVERMIND: 【传统】判定：凝聚力未达当前价格梯，暂不可采纳"
+	}
+	if = {
+		limit = { num_tradition_categories >= @max_tradition_trees }
+		log = "OVERMIND: 【传统】树位已满（num_tradition_categories >= max）"
+	}
+	if = {
+		limit = { check_variable = { which = om_lex_gain_p7_streak value >= 3 } }
+		log = "OVERMIND: 【传统】当前处于熔断态（连 3 月无收益，探测周期外不执行）"
+	}
+	if = {
+		limit = { NOT = { check_variable = { which = om_lex_gain_p7_streak value >= 3 } } }
+		log = "OVERMIND: 【传统】当前未熔断（连 3 月门槛未满），动作应可落地"
+	}
+}
+overmind_autonomy_phase_ascension = {
+
+	# D-7 入口日志：证明「本月轮到了本相位」。
+	# 与下面那些「动作成功才写」的日志配合，即可区分两种沉默：
+	#   有本行、无动作行 → 轮到了但条件不满足（通常是钱不够）
+	#   两行都没有        → 压根没轮到（日程问题）
+	log = "OVERMIND: 【相位 7/8】 ASCENSION — 传统与飞升"
+		overmind_autonomy_tradition_report = yes
+
+	if = {
+		limit = {
+			num_tradition_categories < @max_tradition_trees
+			overmind_afford_tradition = yes
+		}
+		overmind_advance_tradition_by_era = yes
+		overmind_charge_tradition = yes
+		set_country_flag = om_did_tradition
+	}
+	else_if = {
+		limit = {
+			overmind_afford_tradition = yes
+			num_tradition_categories >= 1
+		}
+		overmind_advance_tradition_node = yes
+		overmind_charge_tradition = yes
+		set_country_flag = om_did_tradition
+	}
+
+	# 飞升天赋：只有在传统真的动了之后才给，避免和传统抢凝聚力
+	#
+	# ⚠️ 槽位上限的写法踩过坑（2026-09-15 实机 error.log）：
+	#
+	#     Variable num_ascension_perk_slots is not set for scoped country
+	#     '地球联合国' at overmind_autonomy.txt:610
+	#
+	# 原写法是
+	#
+	#     num_ascension_perks  <  num_ascension_perk_slots
+	#
+	# 错在**右边**，不在左边。左边 ``num_ascension_perks`` 是对的 ——
+	# 游戏里用了 200+ 次（ascension_perks/00_ascension_paths.txt 等），
+	# exe 的 trigger 名字表里也确有它（记在 ``num_ascension_perk`` 这个名字旁边）。
+	#
+	# ``num_ascension_perk_slots`` 才是引擎**没有**实现的那个：
+	#   * 全游戏只有 2 处脚本引用它（pop_faction_types/00_traditionalist.txt:383、
+	#     technology/00_soc_tech.txt:6029）；
+	#   * **没有任何一处给它赋值**；exe 里它只出现在 trigger 名字表中，没有取值实现；
+	#   * 引擎因此报 "is not set for scoped country"，读数恒为「未设置」。
+	#
+	# 改法：不再问引擎槽位上限 —— 用一个**宽松上界**兜底即可。
+	#
+	# 为什么可以不问槽位：真正的槽位限制由 ``add_ascension_perk`` 自己把关 ——
+	# 槽满了它会拒绝执行。我们这层只是"什么时候值得尝试"的粗筛，
+	# 筛得宽一点只是偶尔白试一次，筛得错（像原来那样恒读「未设置」）才是真故障。
+	# 上界为什么是 64，而不是某个"看起来对"的数（2026-09-15 环境核查）
+	# ------------------------------------------------------------
+	# 我原先写 20，理由是"基础 1 槽 + 科技/传统加成，量级为个位数"。
+	# 这个推论**默认了原版环境**。核查实际安装的 mod 之后发现：
+	#
+	#     vanilla defines        ASCENSION_PERKS_SLOTS = 8
+	#     用户装的 mod 改成了      ASCENSION_PERKS_SLOTS = 32
+	#
+	#     （workshop 3359568450 "31 Tradition Slots + 32 AP Slots"，
+	#       它同时还把 @max_tradition_trees 从 7 抬到了 31）
+	#
+	# 这两件事说明：槽位数**本来就是 mod 可以自由改的**，任何硬编码都有被
+	# 突破的一天。而本相位在 M4-2 还要把飞升池从当前的 16 个扩到全部 49 个
+	# ``ap_*``，届时 20 会变成真实瓶颈 —— 表现为"槽还剩十几个空的，它却不再
+	# 授予了"，而且日志一片安静（因为条件不满足是静默的，见 D-7）。
+	#
+	# 64 的取法：比可预见的任何配置都宽（vanilla 8、本机 mod 32），同时还留
+	# 了一个有限值，免得真出 bug 时无限空转。把关照旧交给
+	# ``add_ascension_perk`` —— 槽满了它自己会拒绝。
+	#
+	# 教训：改这类名字前先在**游戏语料**里数一遍出现次数，别凭「单复数哪个更规范」
+	# 的直觉下手 —— 这里恰好是复数才对。
+	if = {
+		limit = {
+			has_country_flag = om_did_tradition
+			num_ascension_perks < 64
+		}
+		overmind_pick_ascension_perk = yes
+		log = "OVERMIND: 授予了一项飞升天赋"
+	}
+	# A3 收益自报（动作落地旗标直拷；轮转模式同样记账，无碍）
+	# D-41 修法（2026-09-19）：value = <旗标> 按未定义变量读 0（引擎文档：
+	# value 仅接受 float/variable/scope.variable/trigger:）—— 增益恒 0 = 熔断单向锁死。
+	if = {
+		limit = { has_country_flag = om_did_tradition }
+		set_variable = { which = om_lex_gain_p7 value = 1 }
+	}
+	else = {
+		set_variable = { which = om_lex_gain_p7 value = 0 }
+	}
+}
+
+
+# ------------------------------------------------------------
+# S-13：内阁议程选择（玩法模型 §2.1）—— 按社区序补位空闲议程
+#
+# 内阁自动**准备**议程（议员等级越高越快）；准备完毕的「启动」无脚本效果
+# （UI 硬边界）——若引擎准备结束即自动结算，本链自然推进到第二档，
+# 否则停在第一档（下局 error.log + 日志观察项，BACKLOG S-13 行有登记）。
+#
+# 名字确证（2026-09-18 二次订正 —— 初判「零原版用法」只搜了 common/ 漏 events/，
+# 否定性结论必须写明检索范围，铁律 17 补充条款）：
+#   set_council_agenda —— 原版在用：events/game_start.txt:2601
+#   add_council_agenda_progress —— 原版在用：game_start.txt:2602/2607/2612/2623
+#     （= 3500 / 6000，**点数量级整数**）
+#   add_council_agenda_progress_percent —— 原版在用：paragon_events.txt:3581（= 0.5）、
+#     overlord_enclaves_events.txt:13446（= -0.20）⇒ **浮点比例 -1.0..1.0**，非百分数
+#
+# 社区序（玩法模型 §2.1 表）：先 agenda_infinite_opportunities（全民幸福 +4%），
+# 后 agenda_unlock_slot（+1 内阁席位，原版 ai_weight 9999 = AI 必选）；
+# 路线系第三档需伦理判据（S-15 领袖/伦理落地后扩展），用 om_agenda_exhausted
+# 旗做一次性日志，防每月刷屏。
+# ------------------------------------------------------------
+overmind_autonomy_agenda = {
+	if = {
+		limit = { has_agenda_selected = no }
+		if = {
+			limit = { NOT = { has_country_flag = om_agenda_1_done } }
+			set_council_agenda = agenda_infinite_opportunities
+			set_country_flag = om_agenda_1_done
+			log = "OVERMIND: 【议程】 选择 agenda_infinite_opportunities（全民幸福 +4%）"
+		}
+		else_if = {
+			limit = { NOT = { has_country_flag = om_agenda_2_done } }
+			set_council_agenda = agenda_unlock_slot
+			set_country_flag = om_agenda_2_done
+			log = "OVERMIND: 【议程】 选择 agenda_unlock_slot（+1 内阁席位）"
+		}
+		else = {
+			if = {
+				limit = { NOT = { has_country_flag = om_agenda_exhausted } }
+				set_country_flag = om_agenda_exhausted
+				log = "OVERMIND: 【议程】 社区默认两档已用尽，路线系议程待 S-15 伦理判据后扩展"
+			}
+		}
+	}
+	else = {
+		# S-13 推进（2026-09-18）：规格「设置与推进」的后半 —— 有议程在位时月度加速
+		# 准备期。引擎文档确证 add_council_agenda_progress_percent 取值 **-1.0..1.0 浮点**
+		# （script_documentation/effects.log:3139 —— 不是百分数）。
+		# +0.1/月 = 准备期约 10 个月/档；对已启动（10 年 buff 中）的议程无义但无害。
+		add_council_agenda_progress_percent = 0.1
+		# S-13 可见性（WDMSG-066 P0-A，用户要求「议会进程要看得见」）：
+		# once 旗标消耗后永续静默 = 可见性缺陷。改心跳：每 6 次推进打一行，
+		# 用户可在日志里看到议会在动。unset 变量读 0，change_variable 自增即可，无需初始化。
+		change_variable = { which = om_agenda_boost_n value = 1 }
+		if = {
+			limit = { check_variable = { which = om_agenda_boost_n value >= 6 } }
+			set_variable = { which = om_agenda_boost_n value = 0 }
+			log = "OVERMIND: 【议程】 心跳：本议程已推进 6 个月（+60%），议会持续运转"
+		}
+	}
+}
+
+
+
+
+# ------------------------------------------------------------
+# S-18：LLM 决策规则求值器（规格 v4 §3.3，批次① 单条件骨架）
+# ------------------------------------------------------------
+# S-18：规则数据变量初始化（由渲染出的 overmind_lex.txt 在换版时调用）。
+# 12 条规则 × 4 字段（cond/cond2/op/act），0 = 无条件/无规则（D-6：
+# 未设置变量读数即假，求值器依赖的字段必须显式清零）。
+# ------------------------------------------------------------
+
+overmind_cond_check = {
+	set_variable = { which = om_rule_hit value = 0 }
+	if = {
+		limit = {
+			check_variable = { which = $VNAME$ value = 1 }
+			overmind_cond_1 = yes
+		}
+		set_variable = { which = om_rule_hit value = 1 }
+	}
+	else_if = {
+		limit = {
+			check_variable = { which = $VNAME$ value = 2 }
+			overmind_cond_2 = yes
+		}
+		set_variable = { which = om_rule_hit value = 1 }
+	}
+	else_if = {
+		limit = {
+			check_variable = { which = $VNAME$ value = 3 }
+			overmind_cond_3 = yes
+		}
+		set_variable = { which = om_rule_hit value = 1 }
+	}
+	else_if = {
+		limit = {
+			check_variable = { which = $VNAME$ value = 4 }
+			overmind_cond_4 = yes
+		}
+		set_variable = { which = om_rule_hit value = 1 }
+	}
+	else_if = {
+		limit = {
+			check_variable = { which = $VNAME$ value = 5 }
+			overmind_cond_5 = yes
+		}
+		set_variable = { which = om_rule_hit value = 1 }
+	}
+	else_if = {
+		limit = {
+			check_variable = { which = $VNAME$ value = 6 }
+			overmind_cond_6 = yes
+		}
+		set_variable = { which = om_rule_hit value = 1 }
+	}
+	else_if = {
+		limit = {
+			check_variable = { which = $VNAME$ value = 7 }
+			overmind_cond_7 = yes
+		}
+		set_variable = { which = om_rule_hit value = 1 }
+	}
+	else_if = {
+		limit = {
+			check_variable = { which = $VNAME$ value = 8 }
+			overmind_cond_8 = yes
+		}
+		set_variable = { which = om_rule_hit value = 1 }
+	}
+	else_if = {
+		limit = {
+			check_variable = { which = $VNAME$ value = 9 }
+			overmind_cond_9 = yes
+		}
+		set_variable = { which = om_rule_hit value = 1 }
+	}
+	else_if = {
+		limit = {
+			check_variable = { which = $VNAME$ value = 10 }
+			overmind_cond_10 = yes
+		}
+		set_variable = { which = om_rule_hit value = 1 }
+	}
+		if = {
+			limit = { check_variable = { which = $VNAME$ value = 11 } overmind_cond_11 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME$ value = 12 } overmind_cond_12 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME$ value = 13 } overmind_cond_13 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME$ value = 14 } overmind_cond_14 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME$ value = 15 } overmind_cond_15 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME$ value = 16 } overmind_cond_16 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME$ value = 17 } overmind_cond_17 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME$ value = 18 } overmind_cond_18 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME$ value = 19 } overmind_cond_19 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME$ value = 20 } overmind_cond_20 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+	else_if = {
+		limit = { check_variable = { which = $VNAME$ value = 99 } }
+		set_variable = { which = om_rule_hit value = 1 }
+	}
+	# ---- 副条件派发（批次② 复合条件）----
+	set_variable = { which = om_rule_hit2 value = 0 }
+	if = {
+		limit = { check_variable = { which = $VNAME2$ value = 1 } overmind_cond_1 = yes }
+		set_variable = { which = om_rule_hit2 value = 1 }
+	}
+	else_if = {
+		limit = { check_variable = { which = $VNAME2$ value = 2 } overmind_cond_2 = yes }
+		set_variable = { which = om_rule_hit2 value = 1 }
+	}
+	else_if = {
+		limit = { check_variable = { which = $VNAME2$ value = 3 } overmind_cond_3 = yes }
+		set_variable = { which = om_rule_hit2 value = 1 }
+	}
+	else_if = {
+		limit = { check_variable = { which = $VNAME2$ value = 4 } overmind_cond_4 = yes }
+		set_variable = { which = om_rule_hit2 value = 1 }
+	}
+	else_if = {
+		limit = { check_variable = { which = $VNAME2$ value = 5 } overmind_cond_5 = yes }
+		set_variable = { which = om_rule_hit2 value = 1 }
+	}
+	else_if = {
+		limit = { check_variable = { which = $VNAME2$ value = 6 } overmind_cond_6 = yes }
+		set_variable = { which = om_rule_hit2 value = 1 }
+	}
+	else_if = {
+		limit = { check_variable = { which = $VNAME2$ value = 7 } overmind_cond_7 = yes }
+		set_variable = { which = om_rule_hit2 value = 1 }
+	}
+	else_if = {
+		limit = { check_variable = { which = $VNAME2$ value = 8 } overmind_cond_8 = yes }
+		set_variable = { which = om_rule_hit2 value = 1 }
+	}
+	else_if = {
+		limit = { check_variable = { which = $VNAME2$ value = 9 } overmind_cond_9 = yes }
+		set_variable = { which = om_rule_hit2 value = 1 }
+	}
+	else_if = {
+		limit = { check_variable = { which = $VNAME2$ value = 10 } overmind_cond_10 = yes }
+		set_variable = { which = om_rule_hit2 value = 1 }
+	}
+		if = {
+			limit = { check_variable = { which = $VNAME2$ value = 11 } overmind_cond_11 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME2$ value = 12 } overmind_cond_12 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME2$ value = 13 } overmind_cond_13 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME2$ value = 14 } overmind_cond_14 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME2$ value = 15 } overmind_cond_15 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME2$ value = 16 } overmind_cond_16 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME2$ value = 17 } overmind_cond_17 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME2$ value = 18 } overmind_cond_18 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME2$ value = 19 } overmind_cond_19 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+		else_if = {
+			limit = { check_variable = { which = $VNAME2$ value = 20 } overmind_cond_20 = yes }
+			set_variable = { which = om_rule_hit value = 1 }
+		}
+	else_if = {
+		limit = { check_variable = { which = $VNAME2$ value = 99 } }
+		set_variable = { which = om_rule_hit2 value = 1 }
+	}
+	# ---- 三算子组合（仅当存在副条件；cond2 = 0 → 主条件真值即结果，缺省退化安全）----
+	if = {
+		limit = { check_variable = { which = $VNAME2$ value >= 1 } }
+		if = {
+			limit = {
+				check_variable = { which = $OP$ value = 2 }
+				check_variable = { which = om_rule_hit value = 0 }
+			}
+			set_variable = { which = om_rule_hit value = om_rule_hit2 }
+		}
+		if = {
+			limit = {
+				NOT = { check_variable = { which = $OP$ value = 2 } }
+				NOT = { check_variable = { which = $OP$ value = 3 } }
+				check_variable = { which = om_rule_hit2 value = 0 }
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+		}
+		if = {
+			limit = {
+				check_variable = { which = $OP$ value = 3 }
+				check_variable = { which = om_rule_hit2 value = 1 }
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+		}
+	}
+}
+
+
+overmind_autonomy_evaluate = {
+	set_variable = { which = om_exec_count value = 0 }
+	set_variable = { which = om_fallback_act value = 0 }
+	# 规则 1
+	if = {
+		limit = { check_variable = { which = om_lex_rule_count value >= 1 } }
+		overmind_cond_check = { VNAME = om_rule_1_cond VNAME2 = om_rule_1_cond2 OP = om_rule_1_op }
+		if = {
+			limit = {
+				check_variable = { which = om_rule_1_cond value = 99 }
+				check_variable = { which = om_fallback_act value = 0 }
+			}
+			set_variable = { which = om_fallback_act value = om_rule_1_act }
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				NOT = { check_variable = { which = om_rule_1_cond value = 99 } }
+				# 去重判据修正（WDMSG-068 缺陷B）：原 NOR 反转 —— 实际语义变成「新相位被跳过、旧相位放行」，日志谎报同相位。
+				OR = {
+					AND = {
+						check_variable = { which = om_exec_count value >= 1 }
+						check_variable = { which = om_exec_1 value = om_rule_1_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 2 }
+						check_variable = { which = om_exec_2 value = om_rule_1_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 3 }
+						check_variable = { which = om_exec_3 value = om_rule_1_act }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #1 与先行规则同相位，去重跳过"
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				OR = {
+					check_variable = { which = om_exec_count value >= 3 }
+					AND = {
+						check_variable = { which = om_parallel_max value = 2 }
+						check_variable = { which = om_exec_count value >= 2 }
+					}
+					AND = {
+						check_variable = { which = om_parallel_max value = 1 }
+						check_variable = { which = om_exec_count value >= 1 }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #1 执行集已满 → 本月截断（未入集相位由回填轮转补跑）"
+		}
+		if = {
+			limit = { check_variable = { which = om_rule_hit value = 1 } }
+			change_variable = { which = om_exec_count value = 1 }
+			if = { limit = { check_variable = { which = om_exec_count value = 1 } } set_variable = { which = om_exec_1 value = om_rule_1_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 2 } } set_variable = { which = om_exec_2 value = om_rule_1_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 3 } } set_variable = { which = om_exec_3 value = om_rule_1_act } }
+			log = "OVERMIND: 【求值】规则 #1 命中 → 入执行集"
+		}
+	}
+	# 规则 2
+	if = {
+		limit = { check_variable = { which = om_lex_rule_count value >= 2 } }
+		overmind_cond_check = { VNAME = om_rule_2_cond VNAME2 = om_rule_2_cond2 OP = om_rule_2_op }
+		if = {
+			limit = {
+				check_variable = { which = om_rule_2_cond value = 99 }
+				check_variable = { which = om_fallback_act value = 0 }
+			}
+			set_variable = { which = om_fallback_act value = om_rule_2_act }
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				NOT = { check_variable = { which = om_rule_2_cond value = 99 } }
+				# 去重判据修正（WDMSG-068 缺陷B）：原 NOR 反转 —— 实际语义变成「新相位被跳过、旧相位放行」，日志谎报同相位。
+				OR = {
+					AND = {
+						check_variable = { which = om_exec_count value >= 1 }
+						check_variable = { which = om_exec_1 value = om_rule_2_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 2 }
+						check_variable = { which = om_exec_2 value = om_rule_2_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 3 }
+						check_variable = { which = om_exec_3 value = om_rule_2_act }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #2 与先行规则同相位，去重跳过"
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				OR = {
+					check_variable = { which = om_exec_count value >= 3 }
+					AND = {
+						check_variable = { which = om_parallel_max value = 2 }
+						check_variable = { which = om_exec_count value >= 2 }
+					}
+					AND = {
+						check_variable = { which = om_parallel_max value = 1 }
+						check_variable = { which = om_exec_count value >= 1 }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #2 执行集已满 → 本月截断（未入集相位由回填轮转补跑）"
+		}
+		if = {
+			limit = { check_variable = { which = om_rule_hit value = 1 } }
+			change_variable = { which = om_exec_count value = 1 }
+			if = { limit = { check_variable = { which = om_exec_count value = 1 } } set_variable = { which = om_exec_1 value = om_rule_2_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 2 } } set_variable = { which = om_exec_2 value = om_rule_2_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 3 } } set_variable = { which = om_exec_3 value = om_rule_2_act } }
+			log = "OVERMIND: 【求值】规则 #2 命中 → 入执行集"
+		}
+	}
+	# 规则 3
+	if = {
+		limit = { check_variable = { which = om_lex_rule_count value >= 3 } }
+		overmind_cond_check = { VNAME = om_rule_3_cond VNAME2 = om_rule_3_cond2 OP = om_rule_3_op }
+		if = {
+			limit = {
+				check_variable = { which = om_rule_3_cond value = 99 }
+				check_variable = { which = om_fallback_act value = 0 }
+			}
+			set_variable = { which = om_fallback_act value = om_rule_3_act }
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				NOT = { check_variable = { which = om_rule_3_cond value = 99 } }
+				# 去重判据修正（WDMSG-068 缺陷B）：原 NOR 反转 —— 实际语义变成「新相位被跳过、旧相位放行」，日志谎报同相位。
+				OR = {
+					AND = {
+						check_variable = { which = om_exec_count value >= 1 }
+						check_variable = { which = om_exec_1 value = om_rule_3_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 2 }
+						check_variable = { which = om_exec_2 value = om_rule_3_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 3 }
+						check_variable = { which = om_exec_3 value = om_rule_3_act }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #3 与先行规则同相位，去重跳过"
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				OR = {
+					check_variable = { which = om_exec_count value >= 3 }
+					AND = {
+						check_variable = { which = om_parallel_max value = 2 }
+						check_variable = { which = om_exec_count value >= 2 }
+					}
+					AND = {
+						check_variable = { which = om_parallel_max value = 1 }
+						check_variable = { which = om_exec_count value >= 1 }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #3 执行集已满 → 本月截断（未入集相位由回填轮转补跑）"
+		}
+		if = {
+			limit = { check_variable = { which = om_rule_hit value = 1 } }
+			change_variable = { which = om_exec_count value = 1 }
+			if = { limit = { check_variable = { which = om_exec_count value = 1 } } set_variable = { which = om_exec_1 value = om_rule_3_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 2 } } set_variable = { which = om_exec_2 value = om_rule_3_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 3 } } set_variable = { which = om_exec_3 value = om_rule_3_act } }
+			log = "OVERMIND: 【求值】规则 #3 命中 → 入执行集"
+		}
+	}
+	# 规则 4
+	if = {
+		limit = { check_variable = { which = om_lex_rule_count value >= 4 } }
+		overmind_cond_check = { VNAME = om_rule_4_cond VNAME2 = om_rule_4_cond2 OP = om_rule_4_op }
+		if = {
+			limit = {
+				check_variable = { which = om_rule_4_cond value = 99 }
+				check_variable = { which = om_fallback_act value = 0 }
+			}
+			set_variable = { which = om_fallback_act value = om_rule_4_act }
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				NOT = { check_variable = { which = om_rule_4_cond value = 99 } }
+				# 去重判据修正（WDMSG-068 缺陷B）：原 NOR 反转 —— 实际语义变成「新相位被跳过、旧相位放行」，日志谎报同相位。
+				OR = {
+					AND = {
+						check_variable = { which = om_exec_count value >= 1 }
+						check_variable = { which = om_exec_1 value = om_rule_4_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 2 }
+						check_variable = { which = om_exec_2 value = om_rule_4_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 3 }
+						check_variable = { which = om_exec_3 value = om_rule_4_act }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #4 与先行规则同相位，去重跳过"
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				OR = {
+					check_variable = { which = om_exec_count value >= 3 }
+					AND = {
+						check_variable = { which = om_parallel_max value = 2 }
+						check_variable = { which = om_exec_count value >= 2 }
+					}
+					AND = {
+						check_variable = { which = om_parallel_max value = 1 }
+						check_variable = { which = om_exec_count value >= 1 }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #4 执行集已满 → 本月截断（未入集相位由回填轮转补跑）"
+		}
+		if = {
+			limit = { check_variable = { which = om_rule_hit value = 1 } }
+			change_variable = { which = om_exec_count value = 1 }
+			if = { limit = { check_variable = { which = om_exec_count value = 1 } } set_variable = { which = om_exec_1 value = om_rule_4_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 2 } } set_variable = { which = om_exec_2 value = om_rule_4_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 3 } } set_variable = { which = om_exec_3 value = om_rule_4_act } }
+			log = "OVERMIND: 【求值】规则 #4 命中 → 入执行集"
+		}
+	}
+	# 规则 5
+	if = {
+		limit = { check_variable = { which = om_lex_rule_count value >= 5 } }
+		overmind_cond_check = { VNAME = om_rule_5_cond VNAME2 = om_rule_5_cond2 OP = om_rule_5_op }
+		if = {
+			limit = {
+				check_variable = { which = om_rule_5_cond value = 99 }
+				check_variable = { which = om_fallback_act value = 0 }
+			}
+			set_variable = { which = om_fallback_act value = om_rule_5_act }
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				NOT = { check_variable = { which = om_rule_5_cond value = 99 } }
+				# 去重判据修正（WDMSG-068 缺陷B）：原 NOR 反转 —— 实际语义变成「新相位被跳过、旧相位放行」，日志谎报同相位。
+				OR = {
+					AND = {
+						check_variable = { which = om_exec_count value >= 1 }
+						check_variable = { which = om_exec_1 value = om_rule_5_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 2 }
+						check_variable = { which = om_exec_2 value = om_rule_5_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 3 }
+						check_variable = { which = om_exec_3 value = om_rule_5_act }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #5 与先行规则同相位，去重跳过"
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				OR = {
+					check_variable = { which = om_exec_count value >= 3 }
+					AND = {
+						check_variable = { which = om_parallel_max value = 2 }
+						check_variable = { which = om_exec_count value >= 2 }
+					}
+					AND = {
+						check_variable = { which = om_parallel_max value = 1 }
+						check_variable = { which = om_exec_count value >= 1 }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #5 执行集已满 → 本月截断（未入集相位由回填轮转补跑）"
+		}
+		if = {
+			limit = { check_variable = { which = om_rule_hit value = 1 } }
+			change_variable = { which = om_exec_count value = 1 }
+			if = { limit = { check_variable = { which = om_exec_count value = 1 } } set_variable = { which = om_exec_1 value = om_rule_5_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 2 } } set_variable = { which = om_exec_2 value = om_rule_5_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 3 } } set_variable = { which = om_exec_3 value = om_rule_5_act } }
+			log = "OVERMIND: 【求值】规则 #5 命中 → 入执行集"
+		}
+	}
+	# 规则 6
+	if = {
+		limit = { check_variable = { which = om_lex_rule_count value >= 6 } }
+		overmind_cond_check = { VNAME = om_rule_6_cond VNAME2 = om_rule_6_cond2 OP = om_rule_6_op }
+		if = {
+			limit = {
+				check_variable = { which = om_rule_6_cond value = 99 }
+				check_variable = { which = om_fallback_act value = 0 }
+			}
+			set_variable = { which = om_fallback_act value = om_rule_6_act }
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				NOT = { check_variable = { which = om_rule_6_cond value = 99 } }
+				# 去重判据修正（WDMSG-068 缺陷B）：原 NOR 反转 —— 实际语义变成「新相位被跳过、旧相位放行」，日志谎报同相位。
+				OR = {
+					AND = {
+						check_variable = { which = om_exec_count value >= 1 }
+						check_variable = { which = om_exec_1 value = om_rule_6_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 2 }
+						check_variable = { which = om_exec_2 value = om_rule_6_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 3 }
+						check_variable = { which = om_exec_3 value = om_rule_6_act }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #6 与先行规则同相位，去重跳过"
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				OR = {
+					check_variable = { which = om_exec_count value >= 3 }
+					AND = {
+						check_variable = { which = om_parallel_max value = 2 }
+						check_variable = { which = om_exec_count value >= 2 }
+					}
+					AND = {
+						check_variable = { which = om_parallel_max value = 1 }
+						check_variable = { which = om_exec_count value >= 1 }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #6 执行集已满 → 本月截断（未入集相位由回填轮转补跑）"
+		}
+		if = {
+			limit = { check_variable = { which = om_rule_hit value = 1 } }
+			change_variable = { which = om_exec_count value = 1 }
+			if = { limit = { check_variable = { which = om_exec_count value = 1 } } set_variable = { which = om_exec_1 value = om_rule_6_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 2 } } set_variable = { which = om_exec_2 value = om_rule_6_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 3 } } set_variable = { which = om_exec_3 value = om_rule_6_act } }
+			log = "OVERMIND: 【求值】规则 #6 命中 → 入执行集"
+		}
+	}
+	# 规则 7
+	if = {
+		limit = { check_variable = { which = om_lex_rule_count value >= 7 } }
+		overmind_cond_check = { VNAME = om_rule_7_cond VNAME2 = om_rule_7_cond2 OP = om_rule_7_op }
+		if = {
+			limit = {
+				check_variable = { which = om_rule_7_cond value = 99 }
+				check_variable = { which = om_fallback_act value = 0 }
+			}
+			set_variable = { which = om_fallback_act value = om_rule_7_act }
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				NOT = { check_variable = { which = om_rule_7_cond value = 99 } }
+				# 去重判据修正（WDMSG-068 缺陷B）：原 NOR 反转 —— 实际语义变成「新相位被跳过、旧相位放行」，日志谎报同相位。
+				OR = {
+					AND = {
+						check_variable = { which = om_exec_count value >= 1 }
+						check_variable = { which = om_exec_1 value = om_rule_7_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 2 }
+						check_variable = { which = om_exec_2 value = om_rule_7_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 3 }
+						check_variable = { which = om_exec_3 value = om_rule_7_act }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #7 与先行规则同相位，去重跳过"
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				OR = {
+					check_variable = { which = om_exec_count value >= 3 }
+					AND = {
+						check_variable = { which = om_parallel_max value = 2 }
+						check_variable = { which = om_exec_count value >= 2 }
+					}
+					AND = {
+						check_variable = { which = om_parallel_max value = 1 }
+						check_variable = { which = om_exec_count value >= 1 }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #7 执行集已满 → 本月截断（未入集相位由回填轮转补跑）"
+		}
+		if = {
+			limit = { check_variable = { which = om_rule_hit value = 1 } }
+			change_variable = { which = om_exec_count value = 1 }
+			if = { limit = { check_variable = { which = om_exec_count value = 1 } } set_variable = { which = om_exec_1 value = om_rule_7_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 2 } } set_variable = { which = om_exec_2 value = om_rule_7_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 3 } } set_variable = { which = om_exec_3 value = om_rule_7_act } }
+			log = "OVERMIND: 【求值】规则 #7 命中 → 入执行集"
+		}
+	}
+	# 规则 8
+	if = {
+		limit = { check_variable = { which = om_lex_rule_count value >= 8 } }
+		overmind_cond_check = { VNAME = om_rule_8_cond VNAME2 = om_rule_8_cond2 OP = om_rule_8_op }
+		if = {
+			limit = {
+				check_variable = { which = om_rule_8_cond value = 99 }
+				check_variable = { which = om_fallback_act value = 0 }
+			}
+			set_variable = { which = om_fallback_act value = om_rule_8_act }
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				NOT = { check_variable = { which = om_rule_8_cond value = 99 } }
+				# 去重判据修正（WDMSG-068 缺陷B）：原 NOR 反转 —— 实际语义变成「新相位被跳过、旧相位放行」，日志谎报同相位。
+				OR = {
+					AND = {
+						check_variable = { which = om_exec_count value >= 1 }
+						check_variable = { which = om_exec_1 value = om_rule_8_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 2 }
+						check_variable = { which = om_exec_2 value = om_rule_8_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 3 }
+						check_variable = { which = om_exec_3 value = om_rule_8_act }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #8 与先行规则同相位，去重跳过"
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				OR = {
+					check_variable = { which = om_exec_count value >= 3 }
+					AND = {
+						check_variable = { which = om_parallel_max value = 2 }
+						check_variable = { which = om_exec_count value >= 2 }
+					}
+					AND = {
+						check_variable = { which = om_parallel_max value = 1 }
+						check_variable = { which = om_exec_count value >= 1 }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #8 执行集已满 → 本月截断（未入集相位由回填轮转补跑）"
+		}
+		if = {
+			limit = { check_variable = { which = om_rule_hit value = 1 } }
+			change_variable = { which = om_exec_count value = 1 }
+			if = { limit = { check_variable = { which = om_exec_count value = 1 } } set_variable = { which = om_exec_1 value = om_rule_8_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 2 } } set_variable = { which = om_exec_2 value = om_rule_8_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 3 } } set_variable = { which = om_exec_3 value = om_rule_8_act } }
+			log = "OVERMIND: 【求值】规则 #8 命中 → 入执行集"
+		}
+	}
+	# 规则 9
+	if = {
+		limit = { check_variable = { which = om_lex_rule_count value >= 9 } }
+		overmind_cond_check = { VNAME = om_rule_9_cond VNAME2 = om_rule_9_cond2 OP = om_rule_9_op }
+		if = {
+			limit = {
+				check_variable = { which = om_rule_9_cond value = 99 }
+				check_variable = { which = om_fallback_act value = 0 }
+			}
+			set_variable = { which = om_fallback_act value = om_rule_9_act }
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				NOT = { check_variable = { which = om_rule_9_cond value = 99 } }
+				# 去重判据修正（WDMSG-068 缺陷B）：原 NOR 反转 —— 实际语义变成「新相位被跳过、旧相位放行」，日志谎报同相位。
+				OR = {
+					AND = {
+						check_variable = { which = om_exec_count value >= 1 }
+						check_variable = { which = om_exec_1 value = om_rule_9_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 2 }
+						check_variable = { which = om_exec_2 value = om_rule_9_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 3 }
+						check_variable = { which = om_exec_3 value = om_rule_9_act }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #9 与先行规则同相位，去重跳过"
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				OR = {
+					check_variable = { which = om_exec_count value >= 3 }
+					AND = {
+						check_variable = { which = om_parallel_max value = 2 }
+						check_variable = { which = om_exec_count value >= 2 }
+					}
+					AND = {
+						check_variable = { which = om_parallel_max value = 1 }
+						check_variable = { which = om_exec_count value >= 1 }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #9 执行集已满 → 本月截断（未入集相位由回填轮转补跑）"
+		}
+		if = {
+			limit = { check_variable = { which = om_rule_hit value = 1 } }
+			change_variable = { which = om_exec_count value = 1 }
+			if = { limit = { check_variable = { which = om_exec_count value = 1 } } set_variable = { which = om_exec_1 value = om_rule_9_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 2 } } set_variable = { which = om_exec_2 value = om_rule_9_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 3 } } set_variable = { which = om_exec_3 value = om_rule_9_act } }
+			log = "OVERMIND: 【求值】规则 #9 命中 → 入执行集"
+		}
+	}
+	# 规则 10
+	if = {
+		limit = { check_variable = { which = om_lex_rule_count value >= 10 } }
+		overmind_cond_check = { VNAME = om_rule_10_cond VNAME2 = om_rule_10_cond2 OP = om_rule_10_op }
+		if = {
+			limit = {
+				check_variable = { which = om_rule_10_cond value = 99 }
+				check_variable = { which = om_fallback_act value = 0 }
+			}
+			set_variable = { which = om_fallback_act value = om_rule_10_act }
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				NOT = { check_variable = { which = om_rule_10_cond value = 99 } }
+				# 去重判据修正（WDMSG-068 缺陷B）：原 NOR 反转 —— 实际语义变成「新相位被跳过、旧相位放行」，日志谎报同相位。
+				OR = {
+					AND = {
+						check_variable = { which = om_exec_count value >= 1 }
+						check_variable = { which = om_exec_1 value = om_rule_10_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 2 }
+						check_variable = { which = om_exec_2 value = om_rule_10_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 3 }
+						check_variable = { which = om_exec_3 value = om_rule_10_act }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #10 与先行规则同相位，去重跳过"
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				OR = {
+					check_variable = { which = om_exec_count value >= 3 }
+					AND = {
+						check_variable = { which = om_parallel_max value = 2 }
+						check_variable = { which = om_exec_count value >= 2 }
+					}
+					AND = {
+						check_variable = { which = om_parallel_max value = 1 }
+						check_variable = { which = om_exec_count value >= 1 }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #10 执行集已满 → 本月截断（未入集相位由回填轮转补跑）"
+		}
+		if = {
+			limit = { check_variable = { which = om_rule_hit value = 1 } }
+			change_variable = { which = om_exec_count value = 1 }
+			if = { limit = { check_variable = { which = om_exec_count value = 1 } } set_variable = { which = om_exec_1 value = om_rule_10_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 2 } } set_variable = { which = om_exec_2 value = om_rule_10_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 3 } } set_variable = { which = om_exec_3 value = om_rule_10_act } }
+			log = "OVERMIND: 【求值】规则 #10 命中 → 入执行集"
+		}
+	}
+	# 规则 11
+	if = {
+		limit = { check_variable = { which = om_lex_rule_count value >= 11 } }
+		overmind_cond_check = { VNAME = om_rule_11_cond VNAME2 = om_rule_11_cond2 OP = om_rule_11_op }
+		if = {
+			limit = {
+				check_variable = { which = om_rule_11_cond value = 99 }
+				check_variable = { which = om_fallback_act value = 0 }
+			}
+			set_variable = { which = om_fallback_act value = om_rule_11_act }
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				NOT = { check_variable = { which = om_rule_11_cond value = 99 } }
+				# 去重判据修正（WDMSG-068 缺陷B）：原 NOR 反转 —— 实际语义变成「新相位被跳过、旧相位放行」，日志谎报同相位。
+				OR = {
+					AND = {
+						check_variable = { which = om_exec_count value >= 1 }
+						check_variable = { which = om_exec_1 value = om_rule_11_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 2 }
+						check_variable = { which = om_exec_2 value = om_rule_11_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 3 }
+						check_variable = { which = om_exec_3 value = om_rule_11_act }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #11 与先行规则同相位，去重跳过"
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				OR = {
+					check_variable = { which = om_exec_count value >= 3 }
+					AND = {
+						check_variable = { which = om_parallel_max value = 2 }
+						check_variable = { which = om_exec_count value >= 2 }
+					}
+					AND = {
+						check_variable = { which = om_parallel_max value = 1 }
+						check_variable = { which = om_exec_count value >= 1 }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #11 执行集已满 → 本月截断（未入集相位由回填轮转补跑）"
+		}
+		if = {
+			limit = { check_variable = { which = om_rule_hit value = 1 } }
+			change_variable = { which = om_exec_count value = 1 }
+			if = { limit = { check_variable = { which = om_exec_count value = 1 } } set_variable = { which = om_exec_1 value = om_rule_11_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 2 } } set_variable = { which = om_exec_2 value = om_rule_11_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 3 } } set_variable = { which = om_exec_3 value = om_rule_11_act } }
+			log = "OVERMIND: 【求值】规则 #11 命中 → 入执行集"
+		}
+	}
+	# 规则 12
+	if = {
+		limit = { check_variable = { which = om_lex_rule_count value >= 12 } }
+		overmind_cond_check = { VNAME = om_rule_12_cond VNAME2 = om_rule_12_cond2 OP = om_rule_12_op }
+		if = {
+			limit = {
+				check_variable = { which = om_rule_12_cond value = 99 }
+				check_variable = { which = om_fallback_act value = 0 }
+			}
+			set_variable = { which = om_fallback_act value = om_rule_12_act }
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				NOT = { check_variable = { which = om_rule_12_cond value = 99 } }
+				# 去重判据修正（WDMSG-068 缺陷B）：原 NOR 反转 —— 实际语义变成「新相位被跳过、旧相位放行」，日志谎报同相位。
+				OR = {
+					AND = {
+						check_variable = { which = om_exec_count value >= 1 }
+						check_variable = { which = om_exec_1 value = om_rule_12_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 2 }
+						check_variable = { which = om_exec_2 value = om_rule_12_act }
+					}
+					AND = {
+						check_variable = { which = om_exec_count value >= 3 }
+						check_variable = { which = om_exec_3 value = om_rule_12_act }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #12 与先行规则同相位，去重跳过"
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_rule_hit value = 1 }
+				OR = {
+					check_variable = { which = om_exec_count value >= 3 }
+					AND = {
+						check_variable = { which = om_parallel_max value = 2 }
+						check_variable = { which = om_exec_count value >= 2 }
+					}
+					AND = {
+						check_variable = { which = om_parallel_max value = 1 }
+						check_variable = { which = om_exec_count value >= 1 }
+					}
+				}
+			}
+			set_variable = { which = om_rule_hit value = 0 }
+			log = "OVERMIND: 【求值】规则 #12 执行集已满 → 本月截断（未入集相位由回填轮转补跑）"
+		}
+		if = {
+			limit = { check_variable = { which = om_rule_hit value = 1 } }
+			change_variable = { which = om_exec_count value = 1 }
+			if = { limit = { check_variable = { which = om_exec_count value = 1 } } set_variable = { which = om_exec_1 value = om_rule_12_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 2 } } set_variable = { which = om_exec_2 value = om_rule_12_act } }
+			if = { limit = { check_variable = { which = om_exec_count value = 3 } } set_variable = { which = om_exec_3 value = om_rule_12_act } }
+			log = "OVERMIND: 【求值】规则 #12 命中 → 入执行集"
+		}
+	}
+	log = "OVERMIND: 【求值】 本月全量求值完成（规则集 v2）"
+}
+
+
+# ------------------------------------------------------------
+# S-8：战时管理 —— 消耗度止损止战（规格书 §4.3.6「战_exhaustion 高时止战」）
+#
+# 接口（语料确证，D-8 方法）：
+#   every_war（效果，国家 scope 迭代本国战争，语料 27 处；原版任务系统在
+#   war scope 内配 end_war_effect 使用——同一出处）；
+#   attacker/defender_war_exhaustion（war scope，0-1 刻度，00_scripted_triggers
+#   联邦 AI 用 0.6/0.8 阈值判断求和时机）；
+#   end_war_effect（00_scripted_effects:3871，"Use in war scope. War is
+#   deleted."——白和平/现状停战）。
+#
+# 策略（规格书 §4.3.6「消耗度高时止战」）：我方一侧消耗度 >= 0.75 →
+# 止战止损。防御战（被宣战、消耗度劣势）与进攻战（打不动）都覆盖；
+# 双侧同时 >=0.75 时两分支等价（删同一战争，幂等无害）。
+# 嵌套：tick(2) → war_management(3) → every_war(4) → end_war_effect(5) ✓。
+# ------------------------------------------------------------
+
+overmind_autonomy_starbase_report = {
+	# V-6b 判定自报（WDMSG-088 P0，2026-09-19）：合金 vs 150 / 容量 used vs max / 候选座数
+	# （outpost 且无船坞且无锚地）—— 区分「合金不足」「容量满」「候选空」三个零触发根因。
+	# 旧 V-6c 三分判定整体移除（其文案内嵌【锚地】标签曾误导计数 —— 铁律 16 同族：口径说明也是代码）。
+	if = {
+		limit = {
+			any_owned_starbase = {
+				has_starbase_size = starbase_outpost
+				NOT = { has_starbase_module = shipyard }
+				NOT = { has_starbase_module = anchorage }
+			}
+		}
+		log = "OVERMIND: 【星堡】V-6b 候选座数 ≥1（outpost 且无船坞且无锚地）"
+	}
+	else = {
+		log = "OVERMIND: 【星堡】V-6b 候选座数 =0（无前哨/全部含船坞或已装锚地）"
+	}
+	if = {
+		limit = { overmind_can_afford = { RESOURCE = alloys PAD = 150 } }
+		log = "OVERMIND: 【星堡】合金满足 150 门（V-6b 可负担）"
+	}
+	else = {
+		log = "OVERMIND: 【星堡】合金不足 150 门（V-6b 等待积累）"
+	}
+	if = {
+		limit = { used_starbase_capacity_percent < 1 }
+		log = "OVERMIND: 【星堡】容量有余（未达上限，可升堡）"
+	}
+	else = {
+		log = "OVERMIND: 【星堡】容量已满（达上限，停止升堡）"
+	}
+	if = {
+		limit = {
+			NOT = {
+				any_owned_starbase = {
+					has_starbase_size = starbase_outpost
+					NOT = { has_starbase_module = shipyard }
+					NOT = { has_starbase_module = anchorage }
+				}
+			}
+			overmind_can_afford = { RESOURCE = alloys PAD = 150 }
+			used_starbase_capacity_percent < 1
+		}
+		log = "OVERMIND: 【星堡】候选=no 但合金与容量均满足 —— 若仍无升堡行 = 异常，按 D-8 查因"
+	}
+}
+
+overmind_autonomy_war_management = {
+	every_war = {
+		if = {
+			limit = {
+				is_war_participant = { who = root side = defenders }
+				defender_war_exhaustion >= 0.75
+			}
+			end_war_effect = yes
+			log = "OVERMIND: 【止战】 防守战消耗度 75%+ → 止战止损"
+		}
+	}
+	every_war = {
+		if = {
+			limit = {
+				is_war_participant = { who = root side = attackers }
+				attacker_war_exhaustion >= 0.75
+			}
+			end_war_effect = yes
+			log = "OVERMIND: 【止战】 进攻战消耗度 75%+ → 止战止损"
+		}
+	}
+
+	# P1（WDMSG-078）：V-6c 候选自报 —— 区分「候选空」与「未轮到」。
+	# 16:5x 二次细化：追加 can_afford 维度 —— 分辨「候选=yes 但合金不足」与「可负担应装」。
+	overmind_autonomy_starbase_report = yes
+	# V-6b（D-48 转案，2026-09-19）：V-6c 证伪 —— outpost 无模块槽，
+	# set_starbase_module 落盘失败但扣费/日志照跑（97×50 = 4850 合金泄漏）。
+	# 新链路（原版范式 paragon_effects:1252-1256）：升堡（outpost → starport）→ 装锚地。
+	# 容量门：used_starbase_capacity_percent < 1（原版权威形态 ai_budget:196；
+# D-49：trigger-vs-trigger 比较非法恒假 —— 右值解析为 0，非「容量满」）
+	# —— outpost 不占容量、升堡占，达上限即停（AC-4′）。
+	# 扣费前置：条件全满足才扣 150（升堡估值 100 + 模块 50；估值得分差实证后校准）。
+	# 幂等：NOT anchorage（AC-5′）。
+	if = {
+		limit = {
+			used_starbase_capacity_percent < 1
+			overmind_can_afford = { RESOURCE = alloys PAD = 150 }
+			any_owned_starbase = {
+				has_starbase_size = starbase_outpost
+				NOT = { has_starbase_module = shipyard }
+				NOT = { has_starbase_module = anchorage }
+			}
+		}
+		random_owned_starbase = {
+			limit = {
+				has_starbase_size = starbase_outpost
+				NOT = { has_starbase_module = shipyard }
+				NOT = { has_starbase_module = anchorage }
+			}
+			set_starbase_size = starbase_starport
+			set_starbase_module = {
+				slot = 1
+				module = anchorage
+			}
+			owner = { add_resource = { alloys = -150 } }
+			log = "OVERMIND: 【锚地】 前哨升星港并装锚地模块（V-6b，合金 -150 估）"
+		}
+	}
+
+	# V-6b 贸易枢纽分支（slot 2，贸易值收集）：升堡链同锚地分支。
+	# 防覆盖：跳过含船坞、已有贸易枢纽/锚地者（幂等）。
+	if = {
+		limit = {
+			used_starbase_capacity_percent < 1
+			overmind_can_afford = { RESOURCE = alloys PAD = 150 }
+			any_owned_starbase = {
+				has_starbase_size = starbase_outpost
+				NOT = { has_starbase_module = shipyard }
+				NOT = { has_starbase_module = trading_hub }
+				NOT = { has_starbase_module = anchorage }
+			}
+		}
+		random_owned_starbase = {
+			limit = {
+				has_starbase_size = starbase_outpost
+				NOT = { has_starbase_module = shipyard }
+				NOT = { has_starbase_module = trading_hub }
+				NOT = { has_starbase_module = anchorage }
+			}
+			set_starbase_size = starbase_starport
+			set_starbase_module = {
+				slot = 2
+				module = trading_hub
+			}
+			owner = { add_resource = { alloys = -150 } }
+			log = "OVERMIND: 【贸易枢纽】 前哨升星港并装贸易枢纽模块（V-6b，合金 -150 估）"
+		}
+	}
+}
+
+
+# ------------------------------------------------------------
+# 相位 8 — WAR：战争与防御
+# ------------------------------------------------------------
+overmind_autonomy_phase_war = {
+
+	# D-7 入口日志：证明「本月轮到了本相位」。
+	# 与下面那些「动作成功才写」的日志配合，即可区分两种沉默：
+	#   有本行、无动作行 → 轮到了但条件不满足（通常是钱不够）
+	#   两行都没有        → 压根没轮到（日程问题）
+	log = "OVERMIND: 【相位 8/8】 WAR — 战争与防御"
+
+	# --- 战时：把轰炸姿态交给法案，并补陆军 ---
+	if = {
+		limit = { is_at_war = yes }
+
+		if = {
+			limit = { check_variable = { which = om_lex_bombardment value = 2 } }
+			every_owned_fleet = {
+				limit = { is_mobile = yes }
+				set_fleet_bombardment_stance = indiscriminate
+			}
+		}
+		else_if = {
+			limit = { check_variable = { which = om_lex_bombardment value = 3 } }
+			every_owned_fleet = {
+				limit = { is_mobile = yes }
+				set_fleet_bombardment_stance = raiding
+			}
+		}
+		else = {
+			every_owned_fleet = {
+				limit = { is_mobile = yes }
+				set_fleet_bombardment_stance = selective
+			}
+		}
+
+		if = {
+			limit = {
+				NOT = { has_country_flag = om_did_army }
+				overmind_afford_army_assault_army = yes
+			}
+			random_owned_planet = {
+				limit = { free_building_slots > 0 }
+				create_army = {
+					owner = root
+					type = assault_army
+				}
+			}
+			set_country_flag = om_did_army
+			overmind_charge_army_assault_army = yes
+			log = "OVERMIND: 征募了一支突击陆战队于 [This.GetName]"
+		}
+	}
+
+	# --- 平时：给境内没有星港的系统补一个哨站 ---
+	# （星港被打掉、或系统被割让后会出现这种空档）
+	else = {
+		# S-3：宣战六条件评估（只评估与日志；declare_war 效果归 M3-4）。
+		# 窗口 era3..era4：era1/2 无战争（手册），era5 仅防御反击。
+		# 评估结果必须在日志里可观测（D-7：不写日志的分支等于不存在）。
+		if = {
+			limit = {
+				check_variable = { which = om_era value >= 3 }
+				check_variable = { which = om_era value <= 4 }
+				any_neighbor_country = { overmind_can_declare_war = yes }
+			}
+			log = "OVERMIND: 【宣战评估】 era3-4 窗口内存在满足六条件的邻国目标 —— 宣战执行待 M3-4 战争目标通道"
+		}
+		else_if = {
+			limit = {
+				check_variable = { which = om_era value >= 3 }
+				check_variable = { which = om_era value <= 4 }
+			}
+			log = "OVERMIND: 【宣战评估】 era3-4 窗口内暂无满足六条件的目标"
+		}
+
+		if = {
+			limit = {
+				NOT = { has_country_flag = om_did_starbase }
+				overmind_afford_starbase_starbase_outpost = yes
+			}
+			random_system_within_border = {
+				limit = { NOT = { exists = starbase } }
+				create_starbase = {
+					size = starbase_outpost
+					owner = root
+				}
+			}
+			set_country_flag = om_did_starbase
+			overmind_charge_starbase_starbase_outpost = yes
+			log = "OVERMIND: 重建了边境前哨站"
+		}
+	}
+	# A3 收益自报（动作落地旗标直拷；轮转模式同样记账，无碍）
+	# D-41 修法（2026-09-19）：value = <旗标> 按未定义变量读 0（引擎文档：
+	# value 仅接受 float/variable/scope.variable/trigger:）—— 增益恒 0 = 熔断单向锁死。
+	if = {
+		limit = { has_country_flag = om_did_starbase }
+		set_variable = { which = om_lex_gain_p8 value = 1 }
+	}
+	else = {
+		set_variable = { which = om_lex_gain_p8 value = 0 }
+	}
+}
+
+
+# ------------------------------------------------------------
+# 每月姿态自适应（法案的 stance 旋钮 + 实际战况）
+# ------------------------------------------------------------
+overmind_autonomy_posture = {
+
+	# 法案判定威胁高 → 舰队前置。这是 om_lex_threat 唯一的用途，
+	# 但如果不用它，大模型的威胁评估就只是一串没人读的数字。
+	if = {
+		limit = { check_variable = { which = om_lex_threat value >= 3 } }
+		every_owned_fleet = {
+			limit = { is_mobile = yes }
+			set_fleet_stance = aggressive
+		}
+	}
+	else_if = {
+		limit = { is_at_war = yes }
+		every_owned_fleet = {
+			limit = { is_mobile = yes }
+			set_fleet_stance = aggressive
+		}
+	}
+	else_if = {
+		limit = { check_variable = { which = om_lex_stance value = 1 } }
+		every_owned_fleet = {
+			limit = { is_mobile = yes }
+			set_fleet_stance = evasive
+		}
+	}
+	else = {
+		every_owned_fleet = {
+			limit = { is_mobile = yes }
+			set_fleet_stance = passive
+		}
+	}
+
+	# S-19/D-29：消费品福利贸易政策（贸易值 → 消费品，00_policies.txt:3670）。
+	# 前置 = Mercantile 采纳传统（与原版 option potential 同门）；每月幂等设置。
+	if = {
+		limit = {
+			has_tradition = tr_mercantile_adaptive_economic_policies
+			NOT = { has_policy_flag = trade_conversion_consumer_goods }
+		}
+		set_policy = {
+			policy = trade_policy
+			option = trade_policy_consumer_goods
+		}
+	}
+
+	# 经济姿态：赤字转民用，战时转军工，否则均衡
+	if = {
+		limit = {
+			OR = {
+				overmind_autonomy_deficit_consumer_goods = yes
+				resource_stockpile_compare = { resource = consumer_goods value < 200 }
+			}
+			can_set_policy = {
+				policy = economic_policy
+				option = economic_policy_civilian
+			}
+		}
+		set_policy = {
+			policy = economic_policy
+			option = economic_policy_civilian
+		}
+	}
+	else_if = {
+		limit = {
+			overmind_autonomy_deficit_energy = yes
+			can_set_policy = {
+				policy = economic_policy
+				option = economic_policy_civilian
+			}
+		}
+		set_policy = {
+			policy = economic_policy
+			option = economic_policy_civilian
+		}
+	}
+	else_if = {
+		limit = {
+			is_at_war = yes
+			can_set_policy = {
+				policy = economic_policy
+				option = economic_policy_military
+			}
+		}
+		set_policy = {
+			policy = economic_policy
+			option = economic_policy_military
+		}
+	}
+}
+
+
+# ------------------------------------------------------------
+# 日程格位分发器：把 "格位里的相位号" 翻译成具体动作
+# 参数 SLOT = 变量名（如 om_lex_slot1）
+# ------------------------------------------------------------
+overmind_autonomy_run_slot = {
+	if = {
+		limit = { check_variable = { which = $SLOT$ value = 1 } }
+		overmind_autonomy_phase_relief = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = $SLOT$ value = 2 } }
+		overmind_autonomy_phase_housing = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = $SLOT$ value = 3 } }
+		overmind_autonomy_phase_jobs = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = $SLOT$ value = 4 } }
+		overmind_autonomy_phase_amenities = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = $SLOT$ value = 5 } }
+		overmind_autonomy_phase_science = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = $SLOT$ value = 6 } }
+		overmind_autonomy_phase_military = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = $SLOT$ value = 7 } }
+		overmind_autonomy_phase_ascension = yes
+	}
+	else_if = {
+		limit = { check_variable = { which = $SLOT$ value = 8 } }
+		overmind_autonomy_phase_war = yes
+	}
+	# D-7 兜底：8 个分支都不匹配时，这里以前是**完全静默**的 ——
+	# 法案若给出越界值（0、9、或压根没设置），整个月就这么无声地过去了，
+	# 而日志侧与「相位条件不满足」长得一模一样。
+	# 有了这条，越界会立刻在日志窗口里显形，并点名是哪个格位变量。
+	else = {
+		log = "OVERMIND: 【异常】 日程格位越界 —— $SLOT$ 的值不在 1..8，本月无相位执行"
+	}
+}
+
+
+# ------------------------------------------------------------
+# 主循环：每月调用一次
+# ------------------------------------------------------------
+overmind_autonomy_tick = {
+
+	# --- 换版：存档里的法案版本号与脚本里的不一致，就换上新的 ---
+	if = {
+		limit = {
+			NOT = {
+				check_variable = { which = om_lex_rev value = @om_lex_rev }
+			}
+		}
+		overmind_lex_apply = yes
+	}
+
+	# --- 兜底：旧存档缺 om_era（S-2 之前开的局）→ 按年份补写，
+	#     否则建舰容量门三分支全不成立、帝国永不扩军（D-23）---
+	if = {
+		limit = { NOT = { check_variable = { which = om_era value >= 1 } } }
+		overmind_autonomy_era_sync = yes
+	}
+
+	# --- 兜底：法案文件缺失时给一套默认日程，避免整个自治层空转 ---
+	if = { limit = { NOT = { check_variable = { which = om_lex_slot1 value >= 1 } } } set_variable = { which = om_lex_slot1 value = 1 } }
+	if = { limit = { NOT = { check_variable = { which = om_lex_slot2 value >= 1 } } } set_variable = { which = om_lex_slot2 value = 2 } }
+	if = { limit = { NOT = { check_variable = { which = om_lex_slot3 value >= 1 } } } set_variable = { which = om_lex_slot3 value = 3 } }
+	if = { limit = { NOT = { check_variable = { which = om_lex_slot4 value >= 1 } } } set_variable = { which = om_lex_slot4 value = 4 } }
+	if = { limit = { NOT = { check_variable = { which = om_lex_slot5 value >= 1 } } } set_variable = { which = om_lex_slot5 value = 5 } }
+	if = { limit = { NOT = { check_variable = { which = om_lex_slot6 value >= 1 } } } set_variable = { which = om_lex_slot6 value = 6 } }
+	if = { limit = { NOT = { check_variable = { which = om_lex_slot7 value >= 1 } } } set_variable = { which = om_lex_slot7 value = 7 } }
+	if = { limit = { NOT = { check_variable = { which = om_lex_slot8 value >= 1 } } } set_variable = { which = om_lex_slot8 value = 8 } }
+
+	# --- 月度计数 1..8 ---
+	if = { limit = { NOT = { check_variable = { which = om_month value >= 1 } } } set_variable = { which = om_month value = 0 } }
+	change_variable = { which = om_month value = 1 }
+	if = { limit = { check_variable = { which = om_month value > 8 } } set_variable = { which = om_month value = 1 } }
+
+	# --- 每月限额标记清零（每类动作每月最多一次：SRS FR-25）---
+	remove_country_flag = om_did_build
+	remove_country_flag = om_did_ship
+	remove_country_flag = om_did_army
+	remove_country_flag = om_did_starbase
+	remove_country_flag = om_did_tradition
+	# S-4/S-7 扩张通道月度配额清零（多槽并行，每槽独立门控）
+	set_variable = { which = om_min_built value = 0 }
+	set_variable = { which = om_res_built value = 0 }
+	set_variable = { which = om_out_built value = 0 }
+	set_variable = { which = om_col_built value = 0 }
+	set_variable = { which = om_wl_built value = 0 }
+
+	# --- 每月必做：姿态 ---
+	overmind_autonomy_posture = yes
+
+	# --- 每月必做：建舰 ---
+	# 放在这里（而不是 phase_military 里）是为了省一层嵌套预算，
+	# 理由见 overmind_autonomy_build_ship 顶部注释。
+	# om_did_ship 每月初由下面的 remove_country_flag 清零，所以每月最多建一支。
+	overmind_autonomy_build_ship = yes
+
+	# --- 每月必做：扩张通道（S-4：采矿/科研站 + 前哨拓土）---
+	# 三个动作各有独立月度标记（om_did_mining/research/expand），
+	# 同样由月初清理块复位。
+	overmind_autonomy_expand = yes
+
+	# --- 每月必做：白名单主动基建（S-4 健康路径）---
+	overmind_autonomy_invest = yes
+
+	# --- 每月必做：赤字局势应对（S-12，2026-09-16）---
+	overmind_autonomy_situations = yes
+
+	# --- 每月必做：内阁议程选择（S-13，2026-09-16）---
+	overmind_autonomy_agenda = yes
+
+	# --- 每月必做：战时管理（S-8，2026-09-17）---
+	overmind_autonomy_war_management = yes
+
+	# --- 每月必做：领袖保有量维持（S-15）---
+	overmind_autonomy_manage_leaders = yes
+	# --- S-15d：超编指挥官出清（历史污染 ~200+ 名在持续吃维护，超容翻倍）---
+	overmind_autonomy_prune_leaders = yes
+	# S-15e 实验：一次性创建官员 + 月度内阁自报
+	overmind_autonomy_s15e_experiment = yes
+
+	# --- S-18：LLM 决策规则求值（规则集存在时取代 8 槽轮转）---
+	# 执行分发内联在 tick（不包执行器效果）：run_slot 在第 4 层、相位第 5 层、
+	# 相位内扣费第 5 层顶格 —— 包一层就会超限（build_ship 上提同款先例）。
+	if = {
+		limit = { check_variable = { which = om_lex_rule_count value >= 1 } }
+		overmind_autonomy_evaluate = yes
+	# R2/R5（D-40）：探测轮转指针 0..11 —— 相位 P 在 rot=P-1 的月份强探测一次；
+	# rot=11 当月打 12 月窗熔断汇总（只列仍处熔断态的相位）。
+		change_variable = { which = om_probe_rot value = 1 }
+		if = { limit = { check_variable = { which = om_probe_rot value >= 12 } } set_variable = { which = om_probe_rot value = 0 } }
+		if = {
+			limit = { check_variable = { which = om_probe_rot value = 11 } }
+			if = {
+				limit = { has_country_flag = om_fused_p1 }
+				log = "OVERMIND: 【熔断汇总】相位 1/8 RELIEF 本窗仍处熔断态（探测继续）"
+			}
+			if = {
+				limit = { has_country_flag = om_fused_p2 }
+				log = "OVERMIND: 【熔断汇总】相位 2/8 HOUSING 本窗仍处熔断态（探测继续）"
+			}
+			if = {
+				limit = { has_country_flag = om_fused_p3 }
+				log = "OVERMIND: 【熔断汇总】相位 3/8 JOBS 本窗仍处熔断态（探测继续）"
+			}
+			if = {
+				limit = { has_country_flag = om_fused_p4 }
+				log = "OVERMIND: 【熔断汇总】相位 4/8 AMENITIES 本窗仍处熔断态（探测继续）"
+			}
+			if = {
+				limit = { has_country_flag = om_fused_p5 }
+				log = "OVERMIND: 【熔断汇总】相位 5/8 SCIENCE 本窗仍处熔断态（探测继续）"
+			}
+			if = {
+				limit = { has_country_flag = om_fused_p6 }
+				log = "OVERMIND: 【熔断汇总】相位 6/8 MILITARY 本窗仍处熔断态（探测继续）"
+			}
+			if = {
+				limit = { has_country_flag = om_fused_p7 }
+				log = "OVERMIND: 【熔断汇总】相位 7/8 ASCENSION 本窗仍处熔断态（探测继续）"
+			}
+			if = {
+				limit = { has_country_flag = om_fused_p8 }
+				log = "OVERMIND: 【熔断汇总】相位 8/8 WAR 本窗仍处熔断态（探测继续）"
+			}
+		}
+		if = {
+			# D-36 修法（2026-09-18）：空守卫 if 与槽位块合并 —— 原写法
+			# `if = { limit = {...} }` 块内无体（引擎报 Empty if），守卫丢失使
+			# 槽位块在 om_exec_count 不足时也用上月陈旧值求值（同月重复熔断的根因）。
+			# 合并而非外包 = 嵌套深度不变（铁律 1 五层顶格约束）。
+			limit = { check_variable = { which = om_exec_count value >= 1 } }
+			if = {
+				limit = {
+					check_variable = { which = om_exec_1 value = 1 }
+					check_variable = { which = om_lex_gain_p1_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 0 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p1 } }
+					set_country_flag = om_fused_p1
+					log = "OVERMIND: 【熔断】相位 1/8 RELIEF 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_1 value = 2 }
+					check_variable = { which = om_lex_gain_p2_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 1 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p2 } }
+					set_country_flag = om_fused_p2
+					log = "OVERMIND: 【熔断】相位 2/8 HOUSING 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_1 value = 3 }
+					check_variable = { which = om_lex_gain_p3_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 2 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p3 } }
+					set_country_flag = om_fused_p3
+					log = "OVERMIND: 【熔断】相位 3/8 JOBS 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_1 value = 4 }
+					check_variable = { which = om_lex_gain_p4_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 3 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p4 } }
+					set_country_flag = om_fused_p4
+					log = "OVERMIND: 【熔断】相位 4/8 AMENITIES 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_1 value = 5 }
+					check_variable = { which = om_lex_gain_p5_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 4 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p5 } }
+					set_country_flag = om_fused_p5
+					log = "OVERMIND: 【熔断】相位 5/8 SCIENCE 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_1 value = 6 }
+					check_variable = { which = om_lex_gain_p6_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 5 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p6 } }
+					set_country_flag = om_fused_p6
+					log = "OVERMIND: 【熔断】相位 6/8 MILITARY 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_1 value = 7 }
+					check_variable = { which = om_lex_gain_p7_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 6 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p7 } }
+					set_country_flag = om_fused_p7
+					log = "OVERMIND: 【熔断】相位 7/8 ASCENSION 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_1 value = 8 }
+					check_variable = { which = om_lex_gain_p8_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 7 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p8 } }
+					set_country_flag = om_fused_p8
+					log = "OVERMIND: 【熔断】相位 8/8 WAR 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else = {
+				overmind_autonomy_run_slot = { SLOT = om_exec_1 }
+				remove_country_flag = om_did_build
+				remove_country_flag = om_did_ship
+				remove_country_flag = om_did_army
+				remove_country_flag = om_did_starbase
+				remove_country_flag = om_did_tradition
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_1 value = 1 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p1 value >= 1 } }
+						set_variable = { which = om_lex_gain_p1_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p1 }
+							remove_country_flag = om_fused_p1
+							log = "OVERMIND: 【熔断解除】相位 1/8 RELIEF 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p1_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 0 } }
+						set_variable = { which = om_lex_gain_p1_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_1 value = 2 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p2 value >= 1 } }
+						set_variable = { which = om_lex_gain_p2_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p2 }
+							remove_country_flag = om_fused_p2
+							log = "OVERMIND: 【熔断解除】相位 2/8 HOUSING 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p2_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 1 } }
+						set_variable = { which = om_lex_gain_p2_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_1 value = 3 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p3 value >= 1 } }
+						set_variable = { which = om_lex_gain_p3_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p3 }
+							remove_country_flag = om_fused_p3
+							log = "OVERMIND: 【熔断解除】相位 3/8 JOBS 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p3_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 2 } }
+						set_variable = { which = om_lex_gain_p3_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_1 value = 4 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p4 value >= 1 } }
+						set_variable = { which = om_lex_gain_p4_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p4 }
+							remove_country_flag = om_fused_p4
+							log = "OVERMIND: 【熔断解除】相位 4/8 AMENITIES 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p4_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 3 } }
+						set_variable = { which = om_lex_gain_p4_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_1 value = 5 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p5 value >= 1 } }
+						set_variable = { which = om_lex_gain_p5_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p5 }
+							remove_country_flag = om_fused_p5
+							log = "OVERMIND: 【熔断解除】相位 5/8 SCIENCE 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p5_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 4 } }
+						set_variable = { which = om_lex_gain_p5_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_1 value = 6 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p6 value >= 1 } }
+						set_variable = { which = om_lex_gain_p6_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p6 }
+							remove_country_flag = om_fused_p6
+							log = "OVERMIND: 【熔断解除】相位 6/8 MILITARY 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p6_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 5 } }
+						set_variable = { which = om_lex_gain_p6_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_1 value = 7 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p7 value >= 1 } }
+						set_variable = { which = om_lex_gain_p7_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p7 }
+							remove_country_flag = om_fused_p7
+							log = "OVERMIND: 【熔断解除】相位 7/8 ASCENSION 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p7_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 6 } }
+						set_variable = { which = om_lex_gain_p7_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_1 value = 8 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p8 value >= 1 } }
+						set_variable = { which = om_lex_gain_p8_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p8 }
+							remove_country_flag = om_fused_p8
+							log = "OVERMIND: 【熔断解除】相位 8/8 WAR 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p8_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 7 } }
+						set_variable = { which = om_lex_gain_p8_streak value = 0 }
+					}
+				}
+			}
+		}
+		if = {
+			limit = { check_variable = { which = om_exec_count value >= 2 } }
+			if = {
+				limit = {
+					check_variable = { which = om_exec_2 value = 1 }
+					check_variable = { which = om_lex_gain_p1_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 0 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p1 } }
+					set_country_flag = om_fused_p1
+					log = "OVERMIND: 【熔断】相位 1/8 RELIEF 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_2 value = 2 }
+					check_variable = { which = om_lex_gain_p2_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 1 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p2 } }
+					set_country_flag = om_fused_p2
+					log = "OVERMIND: 【熔断】相位 2/8 HOUSING 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_2 value = 3 }
+					check_variable = { which = om_lex_gain_p3_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 2 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p3 } }
+					set_country_flag = om_fused_p3
+					log = "OVERMIND: 【熔断】相位 3/8 JOBS 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_2 value = 4 }
+					check_variable = { which = om_lex_gain_p4_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 3 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p4 } }
+					set_country_flag = om_fused_p4
+					log = "OVERMIND: 【熔断】相位 4/8 AMENITIES 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_2 value = 5 }
+					check_variable = { which = om_lex_gain_p5_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 4 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p5 } }
+					set_country_flag = om_fused_p5
+					log = "OVERMIND: 【熔断】相位 5/8 SCIENCE 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_2 value = 6 }
+					check_variable = { which = om_lex_gain_p6_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 5 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p6 } }
+					set_country_flag = om_fused_p6
+					log = "OVERMIND: 【熔断】相位 6/8 MILITARY 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_2 value = 7 }
+					check_variable = { which = om_lex_gain_p7_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 6 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p7 } }
+					set_country_flag = om_fused_p7
+					log = "OVERMIND: 【熔断】相位 7/8 ASCENSION 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_2 value = 8 }
+					check_variable = { which = om_lex_gain_p8_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 7 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p8 } }
+					set_country_flag = om_fused_p8
+					log = "OVERMIND: 【熔断】相位 8/8 WAR 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else = {
+				overmind_autonomy_run_slot = { SLOT = om_exec_2 }
+				remove_country_flag = om_did_build
+				remove_country_flag = om_did_ship
+				remove_country_flag = om_did_army
+				remove_country_flag = om_did_starbase
+				remove_country_flag = om_did_tradition
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_2 value = 1 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p1 value >= 1 } }
+						set_variable = { which = om_lex_gain_p1_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p1 }
+							remove_country_flag = om_fused_p1
+							log = "OVERMIND: 【熔断解除】相位 1/8 RELIEF 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p1_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 0 } }
+						set_variable = { which = om_lex_gain_p1_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_2 value = 2 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p2 value >= 1 } }
+						set_variable = { which = om_lex_gain_p2_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p2 }
+							remove_country_flag = om_fused_p2
+							log = "OVERMIND: 【熔断解除】相位 2/8 HOUSING 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p2_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 1 } }
+						set_variable = { which = om_lex_gain_p2_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_2 value = 3 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p3 value >= 1 } }
+						set_variable = { which = om_lex_gain_p3_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p3 }
+							remove_country_flag = om_fused_p3
+							log = "OVERMIND: 【熔断解除】相位 3/8 JOBS 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p3_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 2 } }
+						set_variable = { which = om_lex_gain_p3_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_2 value = 4 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p4 value >= 1 } }
+						set_variable = { which = om_lex_gain_p4_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p4 }
+							remove_country_flag = om_fused_p4
+							log = "OVERMIND: 【熔断解除】相位 4/8 AMENITIES 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p4_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 3 } }
+						set_variable = { which = om_lex_gain_p4_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_2 value = 5 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p5 value >= 1 } }
+						set_variable = { which = om_lex_gain_p5_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p5 }
+							remove_country_flag = om_fused_p5
+							log = "OVERMIND: 【熔断解除】相位 5/8 SCIENCE 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p5_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 4 } }
+						set_variable = { which = om_lex_gain_p5_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_2 value = 6 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p6 value >= 1 } }
+						set_variable = { which = om_lex_gain_p6_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p6 }
+							remove_country_flag = om_fused_p6
+							log = "OVERMIND: 【熔断解除】相位 6/8 MILITARY 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p6_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 5 } }
+						set_variable = { which = om_lex_gain_p6_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_2 value = 7 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p7 value >= 1 } }
+						set_variable = { which = om_lex_gain_p7_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p7 }
+							remove_country_flag = om_fused_p7
+							log = "OVERMIND: 【熔断解除】相位 7/8 ASCENSION 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p7_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 6 } }
+						set_variable = { which = om_lex_gain_p7_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_2 value = 8 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p8 value >= 1 } }
+						set_variable = { which = om_lex_gain_p8_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p8 }
+							remove_country_flag = om_fused_p8
+							log = "OVERMIND: 【熔断解除】相位 8/8 WAR 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p8_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 7 } }
+						set_variable = { which = om_lex_gain_p8_streak value = 0 }
+					}
+				}
+			}
+		}
+		if = {
+			limit = { check_variable = { which = om_exec_count value >= 3 } }
+			if = {
+				limit = {
+					check_variable = { which = om_exec_3 value = 1 }
+					check_variable = { which = om_lex_gain_p1_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 0 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p1 } }
+					set_country_flag = om_fused_p1
+					log = "OVERMIND: 【熔断】相位 1/8 RELIEF 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_3 value = 2 }
+					check_variable = { which = om_lex_gain_p2_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 1 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p2 } }
+					set_country_flag = om_fused_p2
+					log = "OVERMIND: 【熔断】相位 2/8 HOUSING 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_3 value = 3 }
+					check_variable = { which = om_lex_gain_p3_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 2 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p3 } }
+					set_country_flag = om_fused_p3
+					log = "OVERMIND: 【熔断】相位 3/8 JOBS 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_3 value = 4 }
+					check_variable = { which = om_lex_gain_p4_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 3 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p4 } }
+					set_country_flag = om_fused_p4
+					log = "OVERMIND: 【熔断】相位 4/8 AMENITIES 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_3 value = 5 }
+					check_variable = { which = om_lex_gain_p5_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 4 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p5 } }
+					set_country_flag = om_fused_p5
+					log = "OVERMIND: 【熔断】相位 5/8 SCIENCE 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_3 value = 6 }
+					check_variable = { which = om_lex_gain_p6_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 5 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p6 } }
+					set_country_flag = om_fused_p6
+					log = "OVERMIND: 【熔断】相位 6/8 MILITARY 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_3 value = 7 }
+					check_variable = { which = om_lex_gain_p7_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 6 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p7 } }
+					set_country_flag = om_fused_p7
+					log = "OVERMIND: 【熔断】相位 7/8 ASCENSION 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else_if = {
+				limit = {
+					check_variable = { which = om_exec_3 value = 8 }
+					check_variable = { which = om_lex_gain_p8_streak value >= 3 }
+					# R2 半开探测：轮转到本相位探测月（rot = P-1）时放行执行
+					NOT = { check_variable = { which = om_probe_rot value = 7 } }
+				}
+				# R5 降噪：只在跃迁（进入熔断态）时打一行
+				if = {
+					limit = { NOT = { has_country_flag = om_fused_p8 } }
+					set_country_flag = om_fused_p8
+					log = "OVERMIND: 【熔断】相位 8/8 WAR 连续 3 月无正收益 → 熔断（每 12 月探测一次）"
+				}
+			}
+			else = {
+				overmind_autonomy_run_slot = { SLOT = om_exec_3 }
+				remove_country_flag = om_did_build
+				remove_country_flag = om_did_ship
+				remove_country_flag = om_did_army
+				remove_country_flag = om_did_starbase
+				remove_country_flag = om_did_tradition
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_3 value = 1 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p1 value >= 1 } }
+						set_variable = { which = om_lex_gain_p1_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p1 }
+							remove_country_flag = om_fused_p1
+							log = "OVERMIND: 【熔断解除】相位 1/8 RELIEF 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p1_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 0 } }
+						set_variable = { which = om_lex_gain_p1_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_3 value = 2 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p2 value >= 1 } }
+						set_variable = { which = om_lex_gain_p2_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p2 }
+							remove_country_flag = om_fused_p2
+							log = "OVERMIND: 【熔断解除】相位 2/8 HOUSING 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p2_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 1 } }
+						set_variable = { which = om_lex_gain_p2_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_3 value = 3 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p3 value >= 1 } }
+						set_variable = { which = om_lex_gain_p3_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p3 }
+							remove_country_flag = om_fused_p3
+							log = "OVERMIND: 【熔断解除】相位 3/8 JOBS 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p3_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 2 } }
+						set_variable = { which = om_lex_gain_p3_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_3 value = 4 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p4 value >= 1 } }
+						set_variable = { which = om_lex_gain_p4_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p4 }
+							remove_country_flag = om_fused_p4
+							log = "OVERMIND: 【熔断解除】相位 4/8 AMENITIES 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p4_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 3 } }
+						set_variable = { which = om_lex_gain_p4_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_3 value = 5 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p5 value >= 1 } }
+						set_variable = { which = om_lex_gain_p5_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p5 }
+							remove_country_flag = om_fused_p5
+							log = "OVERMIND: 【熔断解除】相位 5/8 SCIENCE 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p5_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 4 } }
+						set_variable = { which = om_lex_gain_p5_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_3 value = 6 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p6 value >= 1 } }
+						set_variable = { which = om_lex_gain_p6_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p6 }
+							remove_country_flag = om_fused_p6
+							log = "OVERMIND: 【熔断解除】相位 6/8 MILITARY 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p6_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 5 } }
+						set_variable = { which = om_lex_gain_p6_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_3 value = 7 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p7 value >= 1 } }
+						set_variable = { which = om_lex_gain_p7_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p7 }
+							remove_country_flag = om_fused_p7
+							log = "OVERMIND: 【熔断解除】相位 7/8 ASCENSION 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p7_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 6 } }
+						set_variable = { which = om_lex_gain_p7_streak value = 0 }
+					}
+				}
+				# R1（D-40b）：记账收进同槽位门 —— 只对真跑过的相位记账，不再跨相位污染
+				if = {
+					limit = { check_variable = { which = om_exec_3 value = 8 } }
+					if = {
+						limit = { check_variable = { which = om_lex_gain_p8 value >= 1 } }
+						set_variable = { which = om_lex_gain_p8_streak value = 0 }
+						if = {
+							limit = { has_country_flag = om_fused_p8 }
+							remove_country_flag = om_fused_p8
+							log = "OVERMIND: 【熔断解除】相位 8/8 WAR 有正收益，恢复服务"
+						}
+					}
+					else = {
+						change_variable = { which = om_lex_gain_p8_streak value = 1 }
+					}
+					# R2 探测月：无论有无收益，streak 归零重新计时（半开探测语义）
+					if = {
+						limit = { check_variable = { which = om_probe_rot value = 7 } }
+						set_variable = { which = om_lex_gain_p8_streak value = 0 }
+					}
+				}
+			}
+		}
+		if = {
+			limit = {
+				check_variable = { which = om_exec_count value = 0 }
+				check_variable = { which = om_fallback_act value >= 1 }
+			}
+			overmind_autonomy_run_slot = { SLOT = om_fallback_act }
+			log = "OVERMIND: 【求值】 本月零命中 → 执行兜底相位（条件码 99）"
+		}
+		# S-20 执行集饿死修法（WDMSG-068 缺陷A，2026-09-18）：规则槽 ≤3 只覆盖命中规则之相位，
+		# 长期把 2/3/4/5/7 挤出执行集（建设冻结 / traditions 24 年恒 0 / 熔断噪音 三象一因）。
+		# 回填：未被规则槽覆盖且未熔断的相位按 om_bf_phase 逐个补跑（每月 ≤5 个）。
+		# 深度：本块与规则槽块同层（if 不计层），run_slot 第 3 层、相位第 4 层 —— 不超限（铁律 1）。
+		# 初始化/越界自愈：存档可能携带旧哨兵值 9（R4 节流旧形态）—— 范围外一律归 1
+		# 初始化/越界自愈（存档可能携带旧哨兵/越界值）
+		if = { limit = { OR = { NOT = { check_variable = { which = om_bf_phase value >= 1 } } check_variable = { which = om_bf_phase value >= 9 } } } set_variable = { which = om_bf_phase value = 1 } }
+		# 指针通道 P1（RELIEF）：未覆盖且未熔断才补跑
+		if = {
+			limit = {
+				check_variable = { which = om_bf_phase value = 1 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 1 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 1 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 1 } }
+					}
+				}
+				NOT = { has_country_flag = om_fused_p1 }
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【回填】相位 1/8 RELIEF —— 规则集未覆盖，轮转补跑"
+		}
+		if = { limit = { check_variable = { which = om_bf_phase value = 1 } } set_variable = { which = om_bf_phase value = 2 } }
+		# 探测通道 P1（RELIEF）：熔断相位在 rot=P-1 月强制探测（与指针解耦），有收益即解除
+		if = {
+			limit = {
+				has_country_flag = om_fused_p1
+				check_variable = { which = om_probe_rot value = 0 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 1 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 1 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 1 } }
+					}
+				}
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【探测】相位 1/8 RELIEF —— 熔断半开探测（12 月周期）"
+			if = {
+				limit = { check_variable = { which = om_lex_gain_p1 value >= 1 } }
+				remove_country_flag = om_fused_p1
+				log = "OVERMIND: 【熔断解除】相位 1/8 RELIEF 回填探测有收益，恢复服务"
+			}
+		}
+
+		# 指针通道 P2（HOUSING）：未覆盖且未熔断才补跑
+		if = {
+			limit = {
+				check_variable = { which = om_bf_phase value = 2 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 2 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 2 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 2 } }
+					}
+				}
+				NOT = { has_country_flag = om_fused_p2 }
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【回填】相位 2/8 HOUSING —— 规则集未覆盖，轮转补跑"
+		}
+		if = { limit = { check_variable = { which = om_bf_phase value = 2 } } set_variable = { which = om_bf_phase value = 3 } }
+		# 探测通道 P2（HOUSING）：熔断相位在 rot=P-1 月强制探测（与指针解耦），有收益即解除
+		if = {
+			limit = {
+				has_country_flag = om_fused_p2
+				check_variable = { which = om_probe_rot value = 1 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 2 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 2 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 2 } }
+					}
+				}
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【探测】相位 2/8 HOUSING —— 熔断半开探测（12 月周期）"
+			if = {
+				limit = { check_variable = { which = om_lex_gain_p2 value >= 1 } }
+				remove_country_flag = om_fused_p2
+				log = "OVERMIND: 【熔断解除】相位 2/8 HOUSING 回填探测有收益，恢复服务"
+			}
+		}
+
+		# 指针通道 P3（JOBS）：未覆盖且未熔断才补跑
+		if = {
+			limit = {
+				check_variable = { which = om_bf_phase value = 3 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 3 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 3 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 3 } }
+					}
+				}
+				NOT = { has_country_flag = om_fused_p3 }
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【回填】相位 3/8 JOBS —— 规则集未覆盖，轮转补跑"
+		}
+		if = { limit = { check_variable = { which = om_bf_phase value = 3 } } set_variable = { which = om_bf_phase value = 4 } }
+		# 探测通道 P3（JOBS）：熔断相位在 rot=P-1 月强制探测（与指针解耦），有收益即解除
+		if = {
+			limit = {
+				has_country_flag = om_fused_p3
+				check_variable = { which = om_probe_rot value = 2 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 3 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 3 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 3 } }
+					}
+				}
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【探测】相位 3/8 JOBS —— 熔断半开探测（12 月周期）"
+			if = {
+				limit = { check_variable = { which = om_lex_gain_p3 value >= 1 } }
+				remove_country_flag = om_fused_p3
+				log = "OVERMIND: 【熔断解除】相位 3/8 JOBS 回填探测有收益，恢复服务"
+			}
+		}
+
+		# 指针通道 P4（AMENITIES）：未覆盖且未熔断才补跑
+		if = {
+			limit = {
+				check_variable = { which = om_bf_phase value = 4 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 4 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 4 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 4 } }
+					}
+				}
+				NOT = { has_country_flag = om_fused_p4 }
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【回填】相位 4/8 AMENITIES —— 规则集未覆盖，轮转补跑"
+		}
+		if = { limit = { check_variable = { which = om_bf_phase value = 4 } } set_variable = { which = om_bf_phase value = 5 } }
+		# 探测通道 P4（AMENITIES）：熔断相位在 rot=P-1 月强制探测（与指针解耦），有收益即解除
+		if = {
+			limit = {
+				has_country_flag = om_fused_p4
+				check_variable = { which = om_probe_rot value = 3 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 4 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 4 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 4 } }
+					}
+				}
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【探测】相位 4/8 AMENITIES —— 熔断半开探测（12 月周期）"
+			if = {
+				limit = { check_variable = { which = om_lex_gain_p4 value >= 1 } }
+				remove_country_flag = om_fused_p4
+				log = "OVERMIND: 【熔断解除】相位 4/8 AMENITIES 回填探测有收益，恢复服务"
+			}
+		}
+
+		# 指针通道 P5（SCIENCE）：未覆盖且未熔断才补跑
+		if = {
+			limit = {
+				check_variable = { which = om_bf_phase value = 5 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 5 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 5 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 5 } }
+					}
+				}
+				NOT = { has_country_flag = om_fused_p5 }
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【回填】相位 5/8 SCIENCE —— 规则集未覆盖，轮转补跑"
+		}
+		if = { limit = { check_variable = { which = om_bf_phase value = 5 } } set_variable = { which = om_bf_phase value = 6 } }
+		# 探测通道 P5（SCIENCE）：熔断相位在 rot=P-1 月强制探测（与指针解耦），有收益即解除
+		if = {
+			limit = {
+				has_country_flag = om_fused_p5
+				check_variable = { which = om_probe_rot value = 4 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 5 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 5 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 5 } }
+					}
+				}
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【探测】相位 5/8 SCIENCE —— 熔断半开探测（12 月周期）"
+			if = {
+				limit = { check_variable = { which = om_lex_gain_p5 value >= 1 } }
+				remove_country_flag = om_fused_p5
+				log = "OVERMIND: 【熔断解除】相位 5/8 SCIENCE 回填探测有收益，恢复服务"
+			}
+		}
+
+		# 指针通道 P6（MILITARY）：未覆盖且未熔断才补跑
+		if = {
+			limit = {
+				check_variable = { which = om_bf_phase value = 6 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 6 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 6 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 6 } }
+					}
+				}
+				NOT = { has_country_flag = om_fused_p6 }
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【回填】相位 6/8 MILITARY —— 规则集未覆盖，轮转补跑"
+		}
+		if = { limit = { check_variable = { which = om_bf_phase value = 6 } } set_variable = { which = om_bf_phase value = 7 } }
+		# 探测通道 P6（MILITARY）：熔断相位在 rot=P-1 月强制探测（与指针解耦），有收益即解除
+		if = {
+			limit = {
+				has_country_flag = om_fused_p6
+				check_variable = { which = om_probe_rot value = 5 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 6 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 6 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 6 } }
+					}
+				}
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【探测】相位 6/8 MILITARY —— 熔断半开探测（12 月周期）"
+			if = {
+				limit = { check_variable = { which = om_lex_gain_p6 value >= 1 } }
+				remove_country_flag = om_fused_p6
+				log = "OVERMIND: 【熔断解除】相位 6/8 MILITARY 回填探测有收益，恢复服务"
+			}
+		}
+
+		# 指针通道 P7（ASCENSION）：未覆盖且未熔断才补跑
+		if = {
+			limit = {
+				check_variable = { which = om_bf_phase value = 7 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 7 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 7 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 7 } }
+					}
+				}
+				NOT = { has_country_flag = om_fused_p7 }
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【回填】相位 7/8 ASCENSION —— 规则集未覆盖，轮转补跑"
+		}
+		if = { limit = { check_variable = { which = om_bf_phase value = 7 } } set_variable = { which = om_bf_phase value = 8 } }
+		# 探测通道 P7（ASCENSION）：熔断相位在 rot=P-1 月强制探测（与指针解耦），有收益即解除
+		if = {
+			limit = {
+				has_country_flag = om_fused_p7
+				check_variable = { which = om_probe_rot value = 6 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 7 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 7 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 7 } }
+					}
+				}
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【探测】相位 7/8 ASCENSION —— 熔断半开探测（12 月周期）"
+			if = {
+				limit = { check_variable = { which = om_lex_gain_p7 value >= 1 } }
+				remove_country_flag = om_fused_p7
+				log = "OVERMIND: 【熔断解除】相位 7/8 ASCENSION 回填探测有收益，恢复服务"
+			}
+		}
+
+		# 指针通道 P8（WAR）：未覆盖且未熔断才补跑
+		if = {
+			limit = {
+				check_variable = { which = om_bf_phase value = 8 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 8 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 8 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 8 } }
+					}
+				}
+				NOT = { has_country_flag = om_fused_p8 }
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【回填】相位 8/8 WAR —— 规则集未覆盖，轮转补跑"
+		}
+		if = { limit = { check_variable = { which = om_bf_phase value = 8 } } set_variable = { which = om_bf_phase value = 1 } }
+		# 探测通道 P8（WAR）：熔断相位在 rot=P-1 月强制探测（与指针解耦），有收益即解除
+		if = {
+			limit = {
+				has_country_flag = om_fused_p8
+				check_variable = { which = om_probe_rot value = 7 }
+				NOT = {
+					OR = {
+					AND = { check_variable = { which = om_exec_count value >= 1 } check_variable = { which = om_exec_1 value = 8 } }
+					AND = { check_variable = { which = om_exec_count value >= 2 } check_variable = { which = om_exec_2 value = 8 } }
+					AND = { check_variable = { which = om_exec_count value >= 3 } check_variable = { which = om_exec_3 value = 8 } }
+					}
+				}
+			}
+			overmind_autonomy_run_slot = { SLOT = om_bf_phase }
+			log = "OVERMIND: 【探测】相位 8/8 WAR —— 熔断半开探测（12 月周期）"
+			if = {
+				limit = { check_variable = { which = om_lex_gain_p8 value >= 1 } }
+				remove_country_flag = om_fused_p8
+				log = "OVERMIND: 【熔断解除】相位 8/8 WAR 回填探测有收益，恢复服务"
+			}
+		}
+		}
+	else = {
+		if = { limit = { check_variable = { which = om_month value = 1 } } overmind_autonomy_run_slot = { SLOT = om_lex_slot1 } }
+		else_if = { limit = { check_variable = { which = om_month value = 2 } } overmind_autonomy_run_slot = { SLOT = om_lex_slot2 } }
+		else_if = { limit = { check_variable = { which = om_month value = 3 } } overmind_autonomy_run_slot = { SLOT = om_lex_slot3 } }
+		else_if = { limit = { check_variable = { which = om_month value = 4 } } overmind_autonomy_run_slot = { SLOT = om_lex_slot4 } }
+		else_if = { limit = { check_variable = { which = om_month value = 5 } } overmind_autonomy_run_slot = { SLOT = om_lex_slot5 } }
+		else_if = { limit = { check_variable = { which = om_month value = 6 } } overmind_autonomy_run_slot = { SLOT = om_lex_slot6 } }
+		else_if = { limit = { check_variable = { which = om_month value = 7 } } overmind_autonomy_run_slot = { SLOT = om_lex_slot7 } }
+		else = { overmind_autonomy_run_slot = { SLOT = om_lex_slot8 } }
+		# 规则计数自愈（未设置读数即假，D-6 家族）：无规则集时显式归 0
+		if = {
+			limit = {
+				NOT = { check_variable = { which = om_lex_rule_count value >= 0 } }
+			}
+			set_variable = { which = om_lex_rule_count value = 0 }
+		}
+	}
+}
+
+
+# ------------------------------------------------------------
+# S-5：动态威胁评估（规格书 §6）—— 每年重算 om_lex_threat
+#
+# D-16：om_lex_threat 原先是法案装载时的静态值（五年不更新），
+# WAR/MILITARY 里所有「威胁高才做」的分支因此都是死代码。
+# 本效果把威胁变成随局势自调节的闭环；0-5 分级不变（≥3 走威胁例外）。
+#
+# 分量表（规格书 §6；权重列只是文档口径，落地为整数加分）：
+#   最强邻国军力比   高于我方（> equivalent）+2；接近我方（>= inferior）+1。
+#                    ⚠️ D-24：relative_power 的 value 只接受定性 token
+#                    （pathetic/inferior/equivalent/superior/overwhelming），
+#                    数值比较实机每月刷 "Invalid relative power token" 且静默判假。
+#                    token 带宽（Paradox Wiki Empire 页 + defines 710-711 交叉
+#                    确证）：equivalent ≈ 0.67–1.5x，superior = 1.5x 起，
+#                    overwhelming = 2.5x 起。规格书的 0.8/1.2 阈值按最近语义
+#                    映射为 inferior/equivalent 两档；方向：在邻国 scope 内
+#                    who = root，value = 邻国/我方。
+#   处于战争         被宣战（我方在 defender 一侧）+2；仅主动宣战 +1
+#   宿敌/清洗者邻接  +1（宿敌对象是我方，或嗜杀清洗者/吞噬蜂群/终结者机械邻接）
+#   危机年代         三大天灾入侵已发生任一 +1（vanilla 危机旗，
+#                    取自 scripted_triggers 的 crisis_happened_and_defeated）
+#
+# 分量和上限 2+2+1+1 = 6，末尾夹紧回 5，保证 0..5 分级不破。
+# 每个名字都在游戏语料里数过出现次数（D-8 方法），写错会被
+# script_audit 的 unknown-key 检查直接拦下。
+# ------------------------------------------------------------
+overmind_evaluate_threat = {
+	set_variable = { which = om_lex_threat value = 0 }
+	if = {
+		limit = {
+			any_neighbor_country = {
+				relative_power = { who = root category = fleet value > equivalent }
+			}
+		}
+		change_variable = { which = om_lex_threat value = 2 }
+	}
+	else_if = {
+		limit = {
+			any_neighbor_country = {
+				relative_power = { who = root category = fleet value >= inferior }
+			}
+		}
+		change_variable = { which = om_lex_threat value = 1 }
+	}
+	if = {
+		limit = {
+			any_war = {
+				any_defender = { is_same_value = root }
+			}
+		}
+		change_variable = { which = om_lex_threat value = 2 }
+	}
+	else_if = {
+		limit = { is_at_war = yes }
+		change_variable = { which = om_lex_threat value = 1 }
+	}
+	if = {
+		limit = {
+			any_neighbor_country = {
+				OR = {
+					is_rival = root
+					has_valid_civic = civic_fanatic_purifiers
+					has_valid_civic = civic_hive_devouring_swarm
+					has_valid_civic = civic_machine_terminator
+				}
+			}
+		}
+		change_variable = { which = om_lex_threat value = 1 }
+	}
+	if = {
+		limit = {
+			OR = {
+				has_global_flag = ai_invasion_happened
+				has_global_flag = extradimensional_invasion_happened
+				has_global_flag = prethoryn_invasion_happened
+			}
+		}
+		change_variable = { which = om_lex_threat value = 1 }
+	}
+	if = {
+		limit = { check_variable = { which = om_lex_threat value >= 5 } }
+		set_variable = { which = om_lex_threat value = 5 }
+	}
+	log = "OVERMIND: 【威胁评估】 om_lex_threat 年度重算完成（邻国军力/战争/宿敌/危机四分量，0-5 分级）"
+}
+
+
+# ------------------------------------------------------------
+# 年度动作：外交修补
+# ------------------------------------------------------------
+# ------------------------------------------------------------
+# S-4 扩张通道（2026-09-16，用户指出缺口：采矿/科研站/拓土）
+# 每月各一次（独立标记 om_did_mining / om_did_research / om_did_expand，
+# 由 tick 的月初清理块复位）。全部花销走 overmind_can_afford（S-1）。
+# 触发器/效果全部对照原版 01_start_of_game_effects.txt 验证。
+# ------------------------------------------------------------
+# ------------------------------------------------------------
+# S-4/S-7 扩张通道（2026-09-16）—— 多槽并行版
+# 每个动作由独立助手效果承担，每月配额由计数器限定：
+#   采矿站 ×2 / 研究站 ×2 / 前哨拓土 ×2 / 殖民 ×1
+# 每一槽都独立过 overmind_can_afford —— 资源不足时后续槽自动空转，
+# 消耗自限（用户要求：并行提效率，但注意资源消耗）。
+# 触发器/效果全部对照原版 01_start_of_game_effects.txt 验证。
+# 每月初由 tick 的重置块把四个计数器清零。
+# ------------------------------------------------------------
+overmind_expand_try_mining = {
+	if = {
+		limit = {
+			check_variable = { which = om_min_built value < 2 }
+			overmind_can_afford = { RESOURCE = minerals PAD = 200 }
+			any_planet_within_border = {
+				has_deposit_for = shipclass_mining_station
+				has_mining_station = no
+			}
+		}
+		random_planet_within_border = {
+			limit = {
+				has_deposit_for = shipclass_mining_station
+				has_mining_station = no
+			}
+			create_mining_station = { owner = root }
+		}
+		change_variable = { which = om_min_built value = 1 }
+		add_resource = { minerals = -100 }
+		log = "OVERMIND: 建了一座采矿站 —— 矿物 -100"
+	}
+}
+
+
+overmind_expand_try_research = {
+	if = {
+		limit = {
+			check_variable = { which = om_res_built value < 2 }
+			overmind_can_afford = { RESOURCE = minerals PAD = 200 }
+			any_planet_within_border = {
+				has_deposit_for = shipclass_research_station
+				has_research_station = no
+			}
+		}
+		random_planet_within_border = {
+			limit = {
+				has_deposit_for = shipclass_research_station
+				has_research_station = no
+			}
+			create_research_station = { owner = root }
+		}
+		change_variable = { which = om_res_built value = 1 }
+		add_resource = { minerals = -100 }
+		log = "OVERMIND: 建了一座研究站 —— 矿物 -100"
+	}
+}
+
+
+overmind_expand_try_outpost = {
+	if = {
+		limit = {
+			check_variable = { which = om_out_built value < 2 }
+			overmind_can_afford = { RESOURCE = alloys PAD = 100 }
+			# S-19/D-25 M2 预留门（裁定 §3.2）：疆域内有可殖民星球时，
+			# 影响力须预留殖民成本（75 + 100 = 175，加法来源见 D-25 规格 §3.2）；
+			# 无可殖民星球时维持 75。判据与殖民分支同源（is_colonizable），防漂移。
+			OR = {
+				AND = {
+					NOT = { any_planet_within_border = { is_colonizable = yes } }
+					resource_stockpile_compare = { resource = influence value >= 75 }
+				}
+				AND = {
+					any_planet_within_border = { is_colonizable = yes }
+					resource_stockpile_compare = { resource = influence value >= 175 }
+				}
+			}
+			any_system_within_border = {
+				exists = starbase
+				any_neighbor_system = {
+					NOT = { has_owner = yes }
+				}
+			}
+		}
+		random_system_within_border = {
+			limit = {
+				exists = starbase
+				any_neighbor_system = {
+					NOT = { has_owner = yes }
+				}
+			}
+			random_neighbor_system = {
+				limit = { NOT = { has_owner = yes } }
+				create_starbase = {
+					size = starbase_outpost
+					owner = root
+				}
+				# S-17 增强（2026-09-18，总裁席降级结论的保留项）：脚本 create_starbase
+				# 不受勘测限制（两局实证），但未勘测星系并入疆域会让后续研究站/殖民
+				# 的语义不完整。拓土即顺手勘测（原版形态：块式 surveyed+surveyor，
+				# infernals_effects.txt:17 先例；root = 国家，同分支 owner = root 同源），
+				# D-30 的民用勘探船自此彻底不需要。
+				set_surveyed = {
+					surveyed = yes
+					surveyor = root
+				}
+			}
+		}
+		change_variable = { which = om_out_built value = 1 }
+		add_resource = { influence = -75 }
+		add_resource = { alloys = -100 }
+		log = "OVERMIND: 前哨拓土 —— 新星系并入疆域（影响力 -75，合金 -100）"
+	}
+}
+
+
+overmind_expand_try_colony = {
+	# S-7 殖民：create_colony（原版 game_start.txt 星球作用域用法）
+	# + is_colonizable（原版 canonical 触发器）。
+	if = {
+		limit = {
+			check_variable = { which = om_col_built value < 1 }
+			overmind_can_afford = { RESOURCE = minerals PAD = 300 }
+			resource_stockpile_compare = { resource = influence value >= 100 }
+			any_planet_within_border = { is_colonizable = yes }
+		}
+		random_planet_within_border = {
+			limit = { is_colonizable = yes }
+			create_colony = {
+				owner = root
+				species = root
+			}
+		}
+		change_variable = { which = om_col_built value = 1 }
+		add_resource = { minerals = -200 }
+		add_resource = { influence = -100 }
+		log = "OVERMIND: 建立新殖民地 —— 矿物 -200，影响力 -100"
+	}
+}
+
+
+# ------------------------------------------------------------
+# S-4 白名单主动基建（健康路径，2026-09-16）—— 规格书 §5 优先级
+# 只在「无能源/食物赤字 + 矿物垫 400 + 能源收入为正」时出手：
+#   研究区 > 铸造区 > 贸易区
+# 每槽独立门控（overmind_afford_*/charge_* 复用既有验证过的写法），
+# 月度计数器 om_wl_built 限流（< 2），月初在 tick 清零。
+# 这是"健康帝国继续发育"的机制根因修复：此前所有建设都挂在"出问题才补"上。
+# ------------------------------------------------------------
+overmind_autonomy_invest = {
+	# S-4 白名单投资通道（2026-09-16 重构：全资源 + 赤字救火 + 年代分层）
+	#
+	# 用户要求：①消费品长期赤字要修 ②「所有资源产能都要有，只是分前后期而已」
+	#          ③稀有资源也要覆盖。
+	# 原缺陷：只有 研究/铸造/贸易 三支 → 研究员（消费品大户）越建越多而消费品
+	# 产能为零 → 长期赤字直至破产（实机已复现「破产了！」事件）。
+	#
+	# ⚠️ district 必须与 zone 的 zone_sets 匹配（4.4.6 实测）：
+	#    energy→district_generator / minerals,rare→district_mining /
+	#    food→district_farming / urban 系(research/factory/foundry/unity/trade)→district_city
+	#
+	# 三段结构（每步受 om_wl_built<2 月度配额约束；每分支仅 1 层 if）：
+	#   ① 赤字救火：任一资源净收入为负 → 立即补对应产能（压过一切常规）
+	#   ② 年代白名单：era1-2 生存(能源/矿物/食物/消费品) → era3 产能(消费品/合金/
+	#      研究/凝聚力) → era4+ 得分(研究/凝聚力/消费品/贸易)
+	#   ③ 稀有资源补库：era3+ 且库存低于阈值时建（需星球有对应矿藏）
+	if = {
+		limit = {
+			check_variable = { which = om_wl_built value < 2 }
+			NOT = { overmind_autonomy_deficit_energy = yes }
+			NOT = { overmind_autonomy_deficit_food = yes }
+			overmind_can_afford = { RESOURCE = minerals PAD = 400 }
+		}
+
+		# ============ 第一段：赤字救火（全资源）============
+		# 【救火】食物赤字 → 立即补产能
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				overmind_autonomy_deficit_food = yes
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_farming
+					num_zones = { type = zone_food value = 0 }
+					owner = { overmind_afford_zone_zone_food = yes }
+				}
+				owner = { overmind_charge_zone_zone_food = yes }
+				add_zone = {
+					district = district_farming
+					zone = zone_food
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【救火】建了食物区 —— 该项净收入为负，优先补产能"
+			}
+		}
+
+		# 【救火】消费品赤字 → 立即补产能
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				overmind_autonomy_deficit_consumer_goods = yes
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = { type = zone_factory value = 0 }
+					owner = { overmind_afford_zone_zone_factory = yes }
+				}
+				owner = { overmind_charge_zone_zone_factory = yes }
+				add_zone = {
+					district = district_city
+					zone = zone_factory
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【救火】建了消费品区 —— 该项净收入为负，优先补产能"
+			}
+		}
+
+		# 【救火】能源赤字 → 立即补产能
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				overmind_autonomy_deficit_energy = yes
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_generator
+					num_zones = { type = zone_energy value = 0 }
+					owner = { overmind_afford_zone_zone_energy = yes }
+				}
+				owner = { overmind_charge_zone_zone_energy = yes }
+				add_zone = {
+					district = district_generator
+					zone = zone_energy
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【救火】建了能源区 —— 该项净收入为负，优先补产能"
+			}
+		}
+
+		# 【救火】矿物赤字 → 立即补产能
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				overmind_autonomy_deficit_minerals = yes
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_mining
+					num_zones = { type = zone_minerals value = 0 }
+					owner = { overmind_afford_zone_zone_minerals = yes }
+				}
+				owner = { overmind_charge_zone_zone_minerals = yes }
+				add_zone = {
+					district = district_mining
+					zone = zone_minerals
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【救火】建了矿物区 —— 该项净收入为负，优先补产能"
+			}
+		}
+
+		# 【救火】合金赤字 → 立即补产能
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				overmind_autonomy_deficit_alloys = yes
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = { type = zone_foundry value = 0 }
+					owner = { overmind_afford_zone_zone_foundry = yes }
+				}
+				owner = { overmind_charge_zone_zone_foundry = yes }
+				add_zone = {
+					district = district_city
+					zone = zone_foundry
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【救火】建了合金区 —— 该项净收入为负，优先补产能"
+			}
+		}
+
+
+		# ============ 第二段：年代白名单（全资源）============
+		# era1-2 生存期：能源区
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				check_variable = { which = om_era value <= 2 }
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_generator
+					num_zones = { type = zone_energy value = 0 }
+					owner = { overmind_afford_zone_zone_energy = yes }
+				}
+				owner = { overmind_charge_zone_zone_energy = yes }
+				add_zone = {
+					district = district_generator
+					zone = zone_energy
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单·生存期】建了能源区"
+			}
+		}
+
+		# era1-2 生存期：采矿区
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				check_variable = { which = om_era value <= 2 }
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_mining
+					num_zones = { type = zone_minerals value = 0 }
+					owner = { overmind_afford_zone_zone_minerals = yes }
+				}
+				owner = { overmind_charge_zone_zone_minerals = yes }
+				add_zone = {
+					district = district_mining
+					zone = zone_minerals
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单·生存期】建了采矿区"
+			}
+		}
+
+		# era1-2 生存期：农业区
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				check_variable = { which = om_era value <= 2 }
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_farming
+					num_zones = { type = zone_food value = 0 }
+					owner = { overmind_afford_zone_zone_food = yes }
+				}
+				owner = { overmind_charge_zone_zone_food = yes }
+				add_zone = {
+					district = district_farming
+					zone = zone_food
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单·生存期】建了农业区"
+			}
+		}
+
+		# era1-2 生存期：工厂区（消费品）
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				check_variable = { which = om_era value <= 2 }
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = { type = zone_factory value = 0 }
+					owner = { overmind_afford_zone_zone_factory = yes }
+				}
+				owner = { overmind_charge_zone_zone_factory = yes }
+				add_zone = {
+					district = district_city
+					zone = zone_factory
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单·生存期】建了工厂区（消费品）"
+			}
+		}
+
+		# era3 产能期：工厂区（消费品）
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				check_variable = { which = om_era value = 3 }
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = { type = zone_factory value = 0 }
+					owner = { overmind_afford_zone_zone_factory = yes }
+				}
+				owner = { overmind_charge_zone_zone_factory = yes }
+				add_zone = {
+					district = district_city
+					zone = zone_factory
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单·产能期】建了工厂区（消费品）"
+			}
+		}
+
+		# era3 产能期：铸造区（合金）
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				check_variable = { which = om_era value = 3 }
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = { type = zone_foundry value = 0 }
+					owner = { overmind_afford_zone_zone_foundry = yes }
+				}
+				owner = { overmind_charge_zone_zone_foundry = yes }
+				add_zone = {
+					district = district_city
+					zone = zone_foundry
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单·产能期】建了铸造区（合金）"
+			}
+		}
+
+		# era3 产能期：研究区
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				check_variable = { which = om_era value = 3 }
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = { type = zone_research value = 0 }
+					owner = { overmind_afford_zone_zone_research = yes }
+				}
+				owner = { overmind_charge_zone_zone_research = yes }
+				add_zone = {
+					district = district_city
+					zone = zone_research
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单·产能期】建了研究区"
+			}
+		}
+
+		# era3 产能期：凝聚力区
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				check_variable = { which = om_era value = 3 }
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = { type = zone_unity value = 0 }
+					owner = { overmind_afford_zone_zone_unity = yes }
+				}
+				owner = { overmind_charge_zone_zone_unity = yes }
+				add_zone = {
+					district = district_city
+					zone = zone_unity
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单·产能期】建了凝聚力区"
+			}
+		}
+
+		# era4+ 得分期：研究区
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				check_variable = { which = om_era value >= 4 }
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = { type = zone_research value = 0 }
+					owner = { overmind_afford_zone_zone_research = yes }
+				}
+				owner = { overmind_charge_zone_zone_research = yes }
+				add_zone = {
+					district = district_city
+					zone = zone_research
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单·得分期】建了研究区"
+			}
+		}
+
+		# era4+ 得分期：凝聚力区
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				check_variable = { which = om_era value >= 4 }
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = { type = zone_unity value = 0 }
+					owner = { overmind_afford_zone_zone_unity = yes }
+				}
+				owner = { overmind_charge_zone_zone_unity = yes }
+				add_zone = {
+					district = district_city
+					zone = zone_unity
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单·得分期】建了凝聚力区"
+			}
+		}
+
+		# era4+ 得分期：工厂区（消费品）
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				check_variable = { which = om_era value >= 4 }
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = { type = zone_factory value = 0 }
+					owner = { overmind_afford_zone_zone_factory = yes }
+				}
+				owner = { overmind_charge_zone_zone_factory = yes }
+				add_zone = {
+					district = district_city
+					zone = zone_factory
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单·得分期】建了工厂区（消费品）"
+			}
+		}
+
+		# era4+ 得分期：贸易区
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				check_variable = { which = om_era value >= 4 }
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_city
+					num_zones = { type = zone_trade value = 0 }
+					owner = { overmind_afford_zone_zone_trade = yes }
+				}
+				owner = { overmind_charge_zone_zone_trade = yes }
+				add_zone = {
+					district = district_city
+					zone = zone_trade
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单·得分期】建了贸易区"
+			}
+		}
+
+
+		# ============ S-19：产能建筑（消费/合金库存低位 → 产能建筑）============
+	# 裁定 §5：building_factory_1（消费品）/ building_foundry_1（合金）。
+	# ⚠️ 专业区前置门：同星球须已有 zone_factory / zone_industrial，否则
+	#    add_building 静默失败（裁定 §5.2，D-26 同型）。
+	# 库存判据：CG <200 / 合金 <200（与条件码 19/20 同口径）；配额共享 om_wl_built。
+	if = {
+		limit = {
+			check_variable = { which = om_wl_built value < 2 }
+			resource_stockpile_compare = { resource = consumer_goods value < 200 }
+			overmind_afford_building_building_factory_1 = yes
+		}
+		random_owned_planet = {
+			limit = {
+				num_zones = { type = zone_factory value >= 1 }
+				free_building_slots > 0
+				owner = { overmind_afford_building_building_factory_1 = yes }
+			}
+			owner = { overmind_charge_building_building_factory_1 = yes }
+			add_building = building_factory_1
+			owner = { change_variable = { which = om_wl_built value = 1 } }
+			log = "OVERMIND: 【产能】建了民用工厂（building_factory_1）—— 消费品库存低位"
+		}
+	}
+	if = {
+		limit = {
+			check_variable = { which = om_wl_built value < 2 }
+			resource_stockpile_compare = { resource = alloys value < 200 }
+			overmind_afford_building_building_foundry_1 = yes
+		}
+		random_owned_planet = {
+			limit = {
+				num_zones = { type = zone_industrial value >= 1 }
+				free_building_slots > 0
+				owner = { overmind_afford_building_building_foundry_1 = yes }
+			}
+			owner = { overmind_charge_building_building_foundry_1 = yes }
+			add_building = building_foundry_1
+			owner = { change_variable = { which = om_wl_built value = 1 } }
+			log = "OVERMIND: 【产能】建了铸造厂（building_foundry_1）—— 合金库存低位"
+		}
+	}
+
+	# ============ 第三段：稀有资源补库（era3+，库存低于阈值）============
+		# ⚠️ 未实机验证：稀有资源区需要星球有对应矿藏（zone 定义里带
+		# swap_type，本代码只查「该星球还没这类区」，矿藏前置由游戏侧判定）。
+		# 若实机出现「扣费但建不成」，改为先查 has_deposit_for 再建。
+		# era3+ 稀有资源：稀有水晶（库存 < 200）
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				# D-45 修法：赤字 bypass 时代门 —— 冶金师 era1 起就吃稀有资源，
+				# era3 门槛曾使早期赤字无产能响应（稀有三区其余规则不变）
+				OR = {
+								has_deficit = rare_crystals
+								AND = {
+												check_variable = { which = om_era value >= 3 }
+												resource_stockpile_compare = { resource = rare_crystals value < 200 }
+								}
+				}
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_mining
+					num_zones = { type = zone_rare_crystals value = 0 }
+					owner = { overmind_afford_zone_zone_rare_crystals = yes }
+				}
+				owner = { overmind_charge_zone_zone_rare_crystals = yes }
+				add_zone = {
+					district = district_mining
+					zone = zone_rare_crystals
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单】建了稀有水晶区（库存偏低，era3+）"
+			}
+		}
+
+		# era3+ 稀有资源：挥发性微粒（库存 < 200）
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				# D-45 修法：赤字 bypass 时代门 —— 冶金师 era1 起就吃稀有资源，
+				# era3 门槛曾使早期赤字无产能响应（稀有三区其余规则不变）
+				OR = {
+								has_deficit = volatile_motes
+								AND = {
+												check_variable = { which = om_era value >= 3 }
+												resource_stockpile_compare = { resource = volatile_motes value < 200 }
+								}
+				}
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_mining
+					num_zones = { type = zone_volatile_motes value = 0 }
+					owner = { overmind_afford_zone_zone_volatile_motes = yes }
+				}
+				owner = { overmind_charge_zone_zone_volatile_motes = yes }
+				add_zone = {
+					district = district_mining
+					zone = zone_volatile_motes
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单】建了挥发性微粒区（库存偏低，era3+）"
+			}
+		}
+
+		# era3+ 稀有资源：异星气体（库存 < 200）
+		if = {
+			limit = {
+				check_variable = { which = om_wl_built value < 2 }
+				# D-45 修法：赤字 bypass 时代门 —— 冶金师 era1 起就吃稀有资源，
+				# era3 门槛曾使早期赤字无产能响应（稀有三区其余规则不变）
+				OR = {
+								has_deficit = exotic_gases
+								AND = {
+												check_variable = { which = om_era value >= 3 }
+												resource_stockpile_compare = { resource = exotic_gases value < 200 }
+								}
+				}
+			}
+			random_owned_planet = {
+				limit = {
+					has_district = district_mining
+					num_zones = { type = zone_exotic_gases value = 0 }
+					owner = { overmind_afford_zone_zone_exotic_gases = yes }
+				}
+				owner = { overmind_charge_zone_zone_exotic_gases = yes }
+				add_zone = {
+					district = district_mining
+					zone = zone_exotic_gases
+				}
+				owner = { change_variable = { which = om_wl_built value = 1 } }
+				log = "OVERMIND: 【白名单】建了异星气体区（库存偏低，era3+）"
+			}
+		}
+
+	}
+}
+
+
+
+
+overmind_autonomy_expand = {
+	# 并行带宽（用户 2026-09-16 指令：多线并进提效率）：
+	#   采矿 ×2 / 研究 ×2 / 前哨 ×2 / 殖民 ×1 —— 每槽独立门控。
+	overmind_expand_try_mining = yes
+	overmind_expand_try_mining = yes
+	overmind_expand_try_research = yes
+	overmind_expand_try_research = yes
+	overmind_expand_try_colony = yes
+	overmind_expand_try_outpost = yes
+	overmind_expand_try_outpost = yes
+}
+
+
+# ------------------------------------------------------------
+# S-2 年代查表（执行手册时代总表）：150/75/30/10 → era5..era2，其余 era1。
+# D-23（2026-09-16）：抽成独立效果 —— 年度 tick 无条件重算，月度 tick
+# 仅在缺失时补写。否则 S-2 之前开的旧存档没有 om_era，建舰容量门三个
+# 分支全部不成立，帝国永不扩军。
+# ------------------------------------------------------------
+# =============================================================================
+# S-12 赤字局势管理（2026-09-16）
+#
+# 机制依据：docs/玩法模型与策略基线.md §5，全部来自本机
+#   common/situations/02_deficit_situations.txt 确证。
+#
+# 8 个赤字局势刻度完全一致：initial_progress = 15，stage 边界 25/50/75/100，
+# 进度满 100 = 破产（on_progress_complete → deficit.110）。
+# 消除通道在 monthly_progress 里：资源不再赤字 → 每月 -5；另有储备再 -1
+#   ⇒ 只要 S-11 的救火分支把赤字补平，局势会自己退回去。
+#
+# 本效果只做一件事：进度过半（> 50 = 第 3 阶段起）时切「应对方式」，
+# 争取时间让产能补上来；脱离高危后**切回默认**（不回退会永久砍产出）。
+# 低进度不动手 —— cut_science 砍 -50% 研究员产出，而科技力占我们实测分数
+# 的 99.8%，不做无谓削减。
+#
+# approach 选择依据：energy / food 两项与原版 AI 在高危期的 ai_weight 选择
+# 一致（同文件内确证）；其余按同类语义取「削减型」（稀有资源取 recycling）。
+# =============================================================================
+overmind_autonomy_situations = {
+
+	# ① 能源赤字 → 削减科研投入（原版 AI 高危期同款）
+	every_situation = {
+		limit = { is_situation_type = situation_energy_deficit }
+		if = {
+			limit = {
+				situation_progress > 50
+				NOT = { current_situation_approach = deficit_approach_cut_science_investment }
+			}
+			set_situation_approach = deficit_approach_cut_science_investment
+			owner = { log = "OVERMIND: 【局势】能源赤字进入高危（进度 > 50/100），应对切换为削减科研投入" }
+		}
+		else_if = {
+			limit = {
+				situation_progress <= 50
+				current_situation_approach = deficit_approach_cut_science_investment
+			}
+			set_situation_approach = deficit_approach_do_nothing
+			owner = { log = "OVERMIND: 【局势】能源赤字已脱离高危，应对恢复默认" }
+		}
+	}
+
+	# ② 矿物赤字 → 削减投资
+	every_situation = {
+		limit = { is_situation_type = situation_mineral_deficit }
+		if = {
+			limit = {
+				situation_progress > 50
+				NOT = { current_situation_approach = deficit_approach_cut_investment }
+			}
+			set_situation_approach = deficit_approach_cut_investment
+			owner = { log = "OVERMIND: 【局势】矿物赤字进入高危（进度 > 50/100），应对切换为削减投资" }
+		}
+		else_if = {
+			limit = {
+				situation_progress <= 50
+				current_situation_approach = deficit_approach_cut_investment
+			}
+			set_situation_approach = deficit_approach_do_nothing
+			owner = { log = "OVERMIND: 【局势】矿物赤字已脱离高危，应对恢复默认" }
+		}
+	}
+
+	# ③ 食物赤字 → 补贴农民（原版 AI 高危期同款：增产而非削减）
+	every_situation = {
+		limit = { is_situation_type = situation_food_deficit }
+		if = {
+			limit = {
+				situation_progress > 50
+				NOT = { current_situation_approach = deficit_approach_invest_in_farmers }
+			}
+			set_situation_approach = deficit_approach_invest_in_farmers
+			owner = { log = "OVERMIND: 【局势】食物赤字进入高危（进度 > 50/100），应对切换为补贴农民" }
+		}
+		else_if = {
+			limit = {
+				situation_progress <= 50
+				current_situation_approach = deficit_approach_invest_in_farmers
+			}
+			set_situation_approach = deficit_approach_do_nothing
+			owner = { log = "OVERMIND: 【局势】食物赤字已脱离高危，应对恢复默认" }
+		}
+	}
+
+	# ④ 消费品赤字 → 削减投资（研究员是消费品大户，砍的是同一批开销）
+	every_situation = {
+		limit = { is_situation_type = situation_consumer_goods_deficit }
+		if = {
+			limit = {
+				situation_progress > 50
+				NOT = { current_situation_approach = deficit_approach_cut_investment }
+			}
+			set_situation_approach = deficit_approach_cut_investment
+			owner = { log = "OVERMIND: 【局势】消费品赤字进入高危（进度 > 50/100），应对切换为削减投资" }
+		}
+		else_if = {
+			limit = {
+				situation_progress <= 50
+				current_situation_approach = deficit_approach_cut_investment
+			}
+			set_situation_approach = deficit_approach_do_nothing
+			owner = { log = "OVERMIND: 【局势】消费品赤字已脱离高危，应对恢复默认" }
+		}
+	}
+
+	# ⑤ 合金赤字 → 削减维护（合金赤字几乎总是军费过高）
+	every_situation = {
+		limit = { is_situation_type = situation_alloys_deficit }
+		if = {
+			limit = {
+				situation_progress > 50
+				NOT = { current_situation_approach = deficit_approach_cut_maintenance }
+			}
+			set_situation_approach = deficit_approach_cut_maintenance
+			owner = { log = "OVERMIND: 【局势】合金赤字进入高危（进度 > 50/100），应对切换为削减维护" }
+		}
+		else_if = {
+			limit = {
+				situation_progress <= 50
+				current_situation_approach = deficit_approach_cut_maintenance
+			}
+			set_situation_approach = deficit_approach_do_nothing
+			owner = { log = "OVERMIND: 【局势】合金赤字已脱离高危，应对恢复默认" }
+		}
+	}
+
+	# ⑥⑦⑧ 稀有资源（水晶 / 微粒 / 气体）→ 回收（降耗最即时）
+	every_situation = {
+		limit = { is_situation_type = situation_rare_crystals_deficit }
+		if = {
+			limit = {
+				situation_progress > 50
+				NOT = { current_situation_approach = deficit_approach_recycling }
+			}
+			set_situation_approach = deficit_approach_recycling
+			owner = { log = "OVERMIND: 【局势】稀有水晶赤字进入高危（进度 > 50/100），应对切换为回收" }
+		}
+		else_if = {
+			limit = {
+				situation_progress <= 50
+				current_situation_approach = deficit_approach_recycling
+			}
+			set_situation_approach = deficit_approach_do_nothing
+			owner = { log = "OVERMIND: 【局势】稀有水晶赤字已脱离高危，应对恢复默认" }
+		}
+	}
+
+	every_situation = {
+		limit = { is_situation_type = situation_volatile_motes_deficit }
+		if = {
+			limit = {
+				situation_progress > 50
+				NOT = { current_situation_approach = deficit_approach_recycling }
+			}
+			set_situation_approach = deficit_approach_recycling
+			owner = { log = "OVERMIND: 【局势】挥发性微粒赤字进入高危（进度 > 50/100），应对切换为回收" }
+		}
+		else_if = {
+			limit = {
+				situation_progress <= 50
+				current_situation_approach = deficit_approach_recycling
+			}
+			set_situation_approach = deficit_approach_do_nothing
+			owner = { log = "OVERMIND: 【局势】挥发性微粒赤字已脱离高危，应对恢复默认" }
+		}
+	}
+
+	every_situation = {
+		limit = { is_situation_type = situation_exotic_gases_deficit }
+		if = {
+			limit = {
+				situation_progress > 50
+				NOT = { current_situation_approach = deficit_approach_recycling }
+			}
+			set_situation_approach = deficit_approach_recycling
+			owner = { log = "OVERMIND: 【局势】异星气体赤字进入高危（进度 > 50/100），应对切换为回收" }
+		}
+		else_if = {
+			limit = {
+				situation_progress <= 50
+				current_situation_approach = deficit_approach_recycling
+			}
+			set_situation_approach = deficit_approach_do_nothing
+			owner = { log = "OVERMIND: 【局势】异星气体赤字已脱离高危，应对恢复默认" }
+		}
+	}
+}
+
+
+overmind_autonomy_era_sync = {
+	if = {
+		limit = { years_passed >= 150 }
+		set_variable = { which = om_era value = 5 }
+	}
+	else_if = {
+		limit = { years_passed >= 75 }
+		set_variable = { which = om_era value = 4 }
+	}
+	else_if = {
+		limit = { years_passed >= 30 }
+		set_variable = { which = om_era value = 3 }
+	}
+	else_if = {
+		limit = { years_passed >= 10 }
+		set_variable = { which = om_era value = 2 }
+	}
+	else = {
+		set_variable = { which = om_era value = 1 }
+	}
+}
+
+
+overmind_autonomy_annual = {
+	# S-2：年代查表 —— 每年重算 om_era（执行手册时代总表）。
+	# 放在年度效果最前，后续任何按年代的逻辑都拿得到最新值。
+	overmind_autonomy_era_sync = yes
+
+	# S-5：动态威胁评估 —— 放在年代阶梯之后，随局势每年重算 om_lex_threat
+	# （D-16：静态威胁值使 WAR/MILITARY 的威胁分支成为死代码）。
+	overmind_evaluate_threat = yes
+
+	if = {
+		limit = { NOT = { is_at_war = yes } }
+		every_country = {
+			limit = {
+				is_country_type = default
+				NOT = { is_same_value = root }
+				NOT = { is_at_war_with = root }
+			}
+			add_opinion_modifier = {
+				who = root
+				modifier = opinion_overmind_goodwill
+			}
+		}
+		log = "OVERMIND: 年度外交回合 —— 已向邻国释放善意"
+	}
+}
+
+
+# ------------------------------------------------------------
+# 启动 / 停止
+# ------------------------------------------------------------
+overmind_autonomy_engage = {
+	set_country_flag = overmind_autonomy
+	remove_country_flag = overmind_autonomy_paused
+	set_variable = { which = om_month value = 0 }
+	# R-2 / D-34 侦查修正（2026-09-18）：原写法在 engage 里无条件清零，
+	# 而 302 自愈让 engage 在**每次启动/载档**都重跑 —— 累计器被反复清零，
+	# 探针读到的永远是「本会话建舰数」（实测 fleet 15→65 而 om_ships_built 最高 1 的矛盾根源）。
+	# 旗标守护：一局只初始化一次，跨会话累计。
+	if = {
+		limit = { NOT = { has_country_flag = om_ships_counter_init } }
+		set_variable = { which = om_ships_built value = 0 }
+		set_country_flag = om_ships_counter_init
+	}
+	# R0（D-40 存量自愈）：streak 是存档变量（实测携带 222 冻结 20 年入局）⇒
+	# 接管时全量归零；真无收益的相位 3 个月后自然重熔断（R2 探测每 12 月兜底）。
+	set_variable = { which = om_lex_gain_p1_streak value = 0 }
+	set_variable = { which = om_lex_gain_p2_streak value = 0 }
+	set_variable = { which = om_lex_gain_p3_streak value = 0 }
+	set_variable = { which = om_lex_gain_p4_streak value = 0 }
+	set_variable = { which = om_lex_gain_p5_streak value = 0 }
+	set_variable = { which = om_lex_gain_p6_streak value = 0 }
+	set_variable = { which = om_lex_gain_p7_streak value = 0 }
+	set_variable = { which = om_lex_gain_p8_streak value = 0 }
+	# S-2：年代变量 —— 字面初始化归 1（契约测试锁定，接管当年查得到年代）；
+	# 随后立即调阶梯同步：engage 在载档重接时也会跑，同步让旧档即时恢复
+	# 真实年代（否则要等下一个年度脉冲，其间误用 era1 行为如禁建舰）。
+	set_variable = { which = om_era value = 1 }
+	overmind_autonomy_era_sync = yes
+	overmind_lex_apply = yes
+	log = "OVERMIND: ===== 主脑已接管帝国，自治层上线 ====="
+}
+
+
+
+# ------------------------------------------------------------
+# S-15：领袖保有量维持（v2 —— 2026-09-18 WorkBuddy 重写）
+#
+# 【v1 的问题】（zcode 2026-09-18 00:51 在途版，静态即判死）
+#   1. om_leader_count 从未 set_variable 初始化，而 v1 依赖 check_variable 的
+#      当前值来判断「该不该补」—— 语义上要求「追踪真实领袖数」，却没有任何
+#      代码把真实领袖数写进去（change_variable 只自增自己）= 自造账本，必然漂移。
+#   2. assign_leader 段落是**空壳**（只有 log），日志谎报「已赋舰队」。
+#   3. 阈值 3 是硬编码魔数，与「舰队无领袖」的真实触发条件无关。
+#
+# 【v2 的设计原则：不记账，实时查】—— 与 S-18 C2 的教训一致：
+#   能用引擎的触发器直接问，就不要自己维护影子计数。
+#
+# 【本机取证】（D 盘游戏语料，非推断）
+#   create_leader  : 116+82+52+40 处；参数 class/species/name/skill/traits/effect
+#   assign_leader  : 语料有 last_created_leader（L1252/1336/1420，create_fleet 块内
+#                    同层）与 event_target（L1018）两形态 —— ⚠️ 实机裁定（2026-09-18）：
+#                    last_created_leader 跨 country→fleet **不贴上**（新局 13×重复创建），
+#                    跨 scope 一律用 event_target 形态（L1003-1018 contingency 先例）
+#     => 必须写在 **fleet scope** 内
+#   set_leader     : 另一形态（L6702），本处不用
+#   any_owned_fleet: 我方 autonomy.txt L2185/2192 已有使用先例
+#
+# 【层级风险规避】
+#   本效果由 tick（第 4 层）直接调用 => 本效果体 = 第 5 层；
+#   其内嵌的 if/limit/any_owned_fleet 均落在第 6 层，**不触及第 7 层上限**。
+#   （对照：create_fleet 包一层就超限 —— 见本文件 §build_ship 先例注释）
+# ------------------------------------------------------------
+
+overmind_autonomy_create_commander = {
+	# 创建一个指挥官。skill = 3 对齐原生范例（00_scripted_effects.txt L1000）。
+	# traits 用随机化，避免与原生 traits 列表耦合。
+	# S-15b（2026-09-20 实机）：assign_leader = last_created_leader 跨 scope 不贴上
+	# （新局连续 13 个月重复创建 = 舰队始终无领袖）—— 改原版标准形态：
+	# 领袖自身 scope 里 save_event_target_as，舰队里按 event_target 赋任
+	# （先例：00_scripted_effects.txt L1003-1018 contingency_fleet_leader）。
+	create_leader = {
+		class = commander
+		name = random
+		species = owner_main_species
+		skill = 3
+		randomize_traits = yes
+		effect = {
+			save_event_target_as = om_new_commander
+		}
+	}
+	log = "OVERMIND: 【领袖】 创建指挥官（skill 3）—— 补充舰队指挥链"
+}
+
+
+overmind_autonomy_create_scientist = {
+	# S-15 v3：科研舰队配科学家（同 commander 的 event_target 形态，target 分名防覆盖）。
+	create_leader = {
+		class = scientist
+		name = random
+		species = owner_main_species
+		skill = 3
+		randomize_traits = yes
+		effect = {
+			save_event_target_as = om_new_scientist
+		}
+	}
+	log = "OVERMIND: 【领袖】 创建科学家（skill 3）—— 补充科研舰队"
+}
+
+
+overmind_autonomy_manage_leaders = {
+	# S-15 v3（用户口径 2026-09-18）：三职业都招、空缺即补、总量守定额。
+	#   指挥官 -> 无领袖「军用」舰队（S-15c 军用过滤保留）
+	#   科学家 -> 无领袖「科研」舰队（shipclass_science_ship，语料 00:7605）
+	#   官员/总督 -> 未实现（岗位检测复杂，S-15e 登记）
+	# 上限门：引擎**未暴露容量触发器**（triggers.log 零命中，defines 只有 XP_SCALE）
+	# ⇒ 用定额 count_owned_leader（先例 federations_election_events.txt:2397），
+	#   定额 6 ≤ 基础容量下限 —— 宁少勿超（用户红线：招募领袖别超上限）。
+	# 两个 hire 共享一道定额门；event_target 按职业分名，避免同 tick 相互覆盖。
+	if = {
+		limit = {
+			count_owned_leader = {
+				limit = { always = yes }
+				count < 6
+			}
+		}
+		if = {
+			limit = {
+				any_owned_fleet = {
+					is_mobile = yes
+					any_owned_ship = { is_ship_class = shipclass_military }   # S-15c：只补军用舰队
+					NOT = { exists = leader }   # 舰队无领袖（实机验证：leader = {} 从 fleet
+					# scope 直接切换是 Invalid context switch —— error.log 5 支舰队各 1 条，
+					# 整个 if 恒假静默失效。exists = leader 是安全的存存在判定，
+					# 舰队 scope 先例：nomads_effects.txt:792、caravaneer_scripted_effects.txt:212）
+				}
+			}
+			overmind_autonomy_create_commander = yes
+			# S-15b：必须写在 fleet scope 内（语料先例 L1018），且用 event_target
+			# （last_created_leader 跨 country→fleet 实机不贴上，见 create_commander 注释）。
+			random_owned_fleet = {
+				limit = {
+					is_mobile = yes
+					any_owned_ship = { is_ship_class = shipclass_military }   # S-15c 同上
+					NOT = { exists = leader }   # 同上：exists 判定，不做 scope 切换
+				}
+				assign_leader = event_target:om_new_commander
+				log = "OVERMIND: 【领袖】 指挥官已就任该舰队（实时判定，无计数缓存）"
+			}
+		}
+		if = {
+			limit = {
+				any_owned_fleet = {
+					is_mobile = yes
+					any_owned_ship = { is_ship_class = shipclass_science_ship }   # 科研船
+					NOT = { exists = leader }
+				}
+			}
+			overmind_autonomy_create_scientist = yes
+			random_owned_fleet = {
+				limit = {
+					is_mobile = yes
+					any_owned_ship = { is_ship_class = shipclass_science_ship }
+					NOT = { exists = leader }
+				}
+				assign_leader = event_target:om_new_scientist
+				log = "OVERMIND: 【领袖】 科学家已就任该科研舰队"
+			}
+		}
+	}
+}
+
+overmind_autonomy_disengage = {
+	remove_country_flag = overmind_autonomy
+	set_country_flag = overmind_autonomy_paused
+	log = "OVERMIND: ===== 主脑已交还帝国控制权，自治层下线 ====="
+}
+
+
+overmind_autonomy_prune_leaders = {
+	# S-15d（2026-09-18 用户实测：「招一堆指挥官把资源吃干了」）——
+	# S-15b 历史污染的冗余指挥官（~200+ 名）留存在存档里持续扣维护（超容 → 维护倍增）。
+	# 定编出清：无岗位指挥官（is_idle，引擎文档 triggers.log:1341）保留 ≤2 名 bench，
+	# 超出的一次性解雇。三重豁免防误杀：带舰队/军队岗位者非 idle；内阁 is_councilor；
+	# 元首 is_ruler。kill_leader 原版形态 gray_goo_effects.txt:946（show_notification = no
+	# 不弹窗）。count_owned_leader / every_owned_leader 均引擎文档确证（4193/4989）。
+	if = {
+		limit = {
+			count_owned_leader = {
+				count > 2
+				limit = {
+					leader_class = commander
+					is_councilor = no
+					is_ruler = no
+					is_idle = yes
+				}
+			}
+		}
+		every_owned_leader = {
+			limit = {
+				leader_class = commander
+				is_councilor = no
+				is_ruler = no
+				is_idle = yes
+			}
+			kill_leader = { show_notification = no }
+		}
+		log = "OVERMIND: 【领袖】 超编出清 —— 解雇全部无岗位指挥官（定编 bench 2）"
+	}
+}
+
+	# S-15e 实验（WDMSG-078）：官员自动入阁假说验证（一次性创建 + 月度自报）。
+	# 判读：is_councilor=yes 的官员出现 ⇒ 引擎自动补位；恒无 ⇒ 硬边界候选。
+	# count_owned_leader 先例：federations_election_events.txt:2397；is_councilor: triggers.log:2927。
+overmind_autonomy_s15e_experiment = {
+	if = {
+		limit = { NOT = { has_country_flag = om_s15e_created } }
+		set_country_flag = om_s15e_created
+		create_leader = {
+			class = official
+			name = random
+			species = owner_main_species
+			skill = 2
+			randomize_traits = yes
+		}
+		log = "OVERMIND: 【实验】S-15e 官员已创建 —— 观察引擎是否自动补内阁位"
+	}
+	if = {
+		limit = {
+			count_owned_leader = {
+				count >= 1
+				limit = {
+					leader_class = official
+					is_councilor = yes
+				}
+			}
+		}
+		log = "OVERMIND: 【实验】内阁中有官员在任（引擎补位成功）"
+	}
+	else = {
+		log = "OVERMIND: 【实验】内阁中无官员（等待引擎补位或判硬边界）"
+	}
+}

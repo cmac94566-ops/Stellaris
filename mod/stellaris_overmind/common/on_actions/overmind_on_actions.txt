@@ -1,0 +1,72 @@
+# ============================================================
+# Stellaris Overmind — On Actions
+# Registers the mod's events on the engine's own pulses.
+#
+# NOTE ON SEMANTICS: mod on_actions MERGE with vanilla (verified 2026-09-14
+# against NSC + Real Space, both of which redefine vanilla keys such as
+# on_game_start / on_game_start_country without copying vanilla's event list).
+# So it is safe to list only our own events here.
+#
+# All three keys below exist in vanilla:
+#   common/on_actions/00_on_actions.txt:31   on_game_start_country
+#   common/on_actions/00_on_actions.txt:326  on_monthly_pulse_country
+#   common/on_actions/00_on_actions.txt:398  on_yearly_pulse_country
+#
+# SCOPE MATTERS:
+#   on_game_start          -> no scope      (namespace-level events only)
+#   on_game_start_country  -> country scope (use this for country_event)
+#   on_*_pulse_country     -> country scope
+#
+# Historical bug (fixed): overmind.1 / overmind.2 are country_events but were
+# hooked to the scope-less on_game_start, producing
+#   "Script Error, attempting to fire country scope event overmind.1 on no_scope"
+# and the overmind_active flag was therefore never set.
+#
+# Why .302 exists (and why it is the load-bearing event):
+#   on_game_start_country only fires when a *campaign* starts.  Loading a save
+#   does not re-run it, so a save made before the autonomy layer existed would
+#   never engage.  .302 is hooked to the monthly pulse and engages the layer
+#   whenever it is not already running, which makes the takeover self-healing
+#   on every load — no console, no manual edict click.
+# ============================================================
+
+# Monthly pulse — the autonomy heartbeat.
+#   304  attribution guard (D-17/F1): warns when the vanilla AI has taken over.
+#        MUST run without an is_ai gate — every other event in the family is
+#        gated on is_ai = no, so it is the only voice left when human_ai
+#        silences the heartbeat.  Listed first so the warning precedes the
+#        month's actions.
+#   302  self-healing engage (no-op once engaged or explicitly paused)
+#   300  the tick itself
+#   303  verification accelerator (no-op unless om_verify_boost is set).
+#        The counter lives directly in 303's `immediate` block — deliberately
+#        NOT in a wrapper scripted_effect.  `immediate` is the event's first
+#        nesting level, so an effect placed in front of the tick would push the
+#        tick one level deeper and blow the engine's 5-level cap.  An earlier
+#        revision also tried a `while` loop here; `while` is unrolled at parse
+#        time, so 24 iterations duplicated the whole phase tree and produced
+#        681 spurious "could not find" errors.  Event self-recursion is used
+#        instead because runtime scheduling costs no static depth.
+on_monthly_pulse_country = {
+	events = {
+		overmind.304
+		overmind.302
+		overmind.303
+		overmind.300
+	}
+}
+
+# Campaign start, per country — engage the autonomy layer immediately so
+# a brand new game is governed from year one rather than from month two.
+on_game_start_country = {
+	events = {
+		overmind.301
+	}
+}
+
+# Yearly pulse — the autonomy layer's annual diplomacy pass.
+on_yearly_pulse_country = {
+	events = {
+		overmind.310
+	}
+}
